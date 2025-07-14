@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Badge Baker & Verifier</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #f4f7f9; color: #333; margin: 0; padding: 20px; }
+        main { max-width: 800px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        h1, h2, h3 { color: #0056b3; border-bottom: 2px solid #eef; padding-bottom: 10px; }
+        section { margin-bottom: 30px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
+        input[type="text"], input[type="email"], input[type="date"], select, textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { display: inline-block; background-color: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        button:hover { background-color: #0056b3; }
+        .download-link { display: inline-block; background-color: #28a745; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; margin-top: 15px; }
+        .download-link:hover { background-color: #218838; }
+        pre { background-color: #eee; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; font-family: "Courier New", Courier, monospace; max-height: 300px; overflow-y: auto; }
+        .hidden { display: none; }
+        .preview-img { max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; border-radius: 4px; margin-top: 15px; }
+        .radio-group label { display: inline-block; margin-right: 15px; font-weight: normal; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Open Badge Baker & Verifier 🏅</h1>
+        
+        <section id="config-section">
+            <h2>1. Load Configuration</h2>
+            <p>Attempting to load <strong>config.yaml</strong> automatically. If it fails, please load your <strong>config.yaml</strong> or <strong>config.json</strong> file manually.</p>
+            <input type="file" id="configFile" accept=".yaml,.yml,.json">
+        </section>
+
+        <section id="baker-section" class="hidden">
+            <h2>2. Issue a Badge</h2>
+            <form id="baker-form">
+                <label for="badge-select">Select a Badge:</label>
+                <select id="badge-select" required></select>
+
+                <label for="recipient-name">Recipient Name:</label>
+                <input type="text" id="recipient-name" placeholder="Jane Doe" required>
+
+                <label for="recipient-email">Recipient Email:</label>
+                <input type="email" id="recipient-email" placeholder="jane.doe@example.com" required>
+
+                <label>Expiration:</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="expiration" value="no" checked> No Expiration</label>
+                    <label><input type="radio" name="expiration" value="yes"> Set Date</label>
+                </div>
+                <input type="date" id="expires-date" class="hidden">
+
+                <button type="submit">Bake Badge</button>
+            </form>
+        </section>
+
+        <section id="result-section" class="hidden">
+            <h2>3. Download Your Baked Badge</h2>
+            <p>Your badge has been baked successfully. You can now download the new PNG file.</p>
+            <img id="preview-img" class="preview-img" alt="Baked Badge Preview">
+            <br>
+            <a id="download-link" class="download-link" href="#" download="baked-badge.png">Download Baked Badge</a>
+            <h3>Generated Assertion JSON:</h3>
+            <pre><code id="json-output"></code></pre>
+        </section>
+        
+        <hr>
+
+        <section id="verifier-section">
+            <h2>Badge Verifier</h2>
+            <p>Upload a baked PNG badge to check its metadata.</p>
+            <input type="file" id="verifyFile" accept=".png">
+            <pre id="verify-output" class="hidden"></pre>
+        </section>
+    </main>
+
+    <script>
+        // --- DOM Elements ---
+        const configFile = document.getElementById('configFile');
+        const configSection = document.getElementById('config-section');
+        const bakerSection = document.getElementById('baker-section');
+        const resultSection = document.getElementById('result-section');
+        const bakerForm = document.getElementById('baker-form');
+        const badgeSelect = document.getElementById('badge-select');
+        const jsonOutput = document.getElementById('json-output');
+        const previewImg = document.getElementById('preview-img');
+        const downloadLink = document.getElementById('download-link');
+        const expirationRadios = document.querySelectorAll('input[name="expiration"]');
+        const expiresDateInput = document.getElementById('expires-date');
+        const verifyFile = document.getElementById('verifyFile');
+        const verifyOutput = document.getElementById('verify-output');
+        
+        let config = {};
+
+        // --- Event Listeners ---
+        window.addEventListener('DOMContentLoaded', loadDefaultConfig);
+        configFile.addEventListener('change', handleConfigFile);
+        bakerForm.addEventListener('submit', handleBake);
+        verifyFile.addEventListener('change', handleVerifyFile);
+        expirationRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                expiresDateInput.classList.toggle('hidden', e.target.value === 'no');
+            });
+        });
+
+        // --- Core Functions ---
+        async function loadDefaultConfig() {
+            try {
+                const response = await fetch('config.yaml');
+                if (response.ok) {
+                    const yamlText = await response.text();
+                    processConfig(yamlText, 'yaml');
+                }
+            } catch (error) {
+                console.info("config.yaml not found, waiting for manual upload.");
+            }
+        }
+
+        function handleConfigFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fileType = file.name.endsWith('.json') ? 'json' : 'yaml';
+                processConfig(e.target.result, fileType);
+            };
+            reader.readAsText(file);
+        }
+
+        function processConfig(configText, type) {
+            try {
+                config = type === 'json' ? JSON.parse(configText) : jsyaml.load(configText);
+                populateBadgeSelector();
+                configSection.classList.add('hidden');
+                bakerSection.classList.remove('hidden');
+            } catch (error) {
+                alert(`Error parsing config file: ${error.message}`);
+            }
+        }
+
+        function populateBadgeSelector() {
+            badgeSelect.innerHTML = '';
+            config.badges.forEach(badge => {
+                const option = document.createElement('option');
+                option.value = badge.alias;
+                option.textContent = badge.name;
+                badgeSelect.appendChild(option);
+            });
+        }
+
+        async function handleBake(event) {
+            event.preventDefault();
+
+            const badgeAlias = badgeSelect.value;
+            const recipientName = document.getElementById('recipient-name').value;
+            const recipientEmail = document.getElementById('recipient-email').value;
+            const expiresOption = document.querySelector('input[name="expiration"]:checked').value;
+            const expiresDate = expiresOption === 'yes' ? expiresDateInput.value : null;
+
+            if (!badgeAlias || !recipientName || !recipientEmail || (expiresOption === 'yes' && !expiresDate)) {
+                alert('Please fill out all fields.');
+                return;
+            }
+
+            try {
+                const badgeData = config.badges.find(b => b.alias === badgeAlias);
+                const assertion = await buildAssertion(badgeData, recipientEmail, expiresDate);
+                const bakedPngDataUri = await bakePng(badgeData.image_base64, assertion);
+                
+                jsonOutput.textContent = JSON.stringify(assertion, null, 2);
+                previewImg.src = bakedPngDataUri;
+                downloadLink.href = bakedPngDataUri;
+                downloadLink.download = `${badgeAlias}-${recipientName.replace(/\s+/g, '-')}.png`;
+                
+                resultSection.classList.remove('hidden');
+            } catch (error) {
+                console.error('Baking failed:', error);
+                alert(`Could not bake the badge: ${error.message}`);
+            }
+        }
+
+        async function handleVerifyFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const pngBytes = new Uint8Array(e.target.result);
+                    const badgeData = extractBadgeData(pngBytes);
+                    if (badgeData) {
+                        verifyOutput.textContent = JSON.stringify(badgeData, null, 2);
+                    } else {
+                        verifyOutput.textContent = 'No valid Open Badge metadata found in this image.';
+                    }
+                    verifyOutput.classList.remove('hidden');
+                } catch (error) {
+                    verifyOutput.textContent = `Error reading badge: ${error.message}`;
+                    verifyOutput.classList.remove('hidden');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        
+        async function buildAssertion(badge, email, expires) {
+            const recipientIdentity = await hashRecipient(email);
+            
+            const assertion = {
+                "@context": "https://w3id.org/openbadges/v2",
+                "type": "Assertion",
+                "id": `urn:uuid:${generateUUID()}`,
+                "recipient": recipientIdentity,
+                "badge": {
+                    "type": "BadgeClass",
+                    "id": badge.id,
+                    "name": badge.name,
+                    "description": badge.description,
+                    "image": badge.image_base64,
+                    "criteria": { "narrative": badge.criteria },
+                    "issuer": {
+                        "type": "Profile",
+                        "id": config.issuer.id,
+                        "name": config.issuer.name,
+                        "url": config.issuer.url,
+                        "email": config.issuer.email,
+                        "image": config.issuer.image_base64
+                    }
+                },
+                "issuedOn": new Date().toISOString(),
+                "verification": { "type": "hosted" }
+            };
+
+            if (expires) {
+                assertion.expires = new Date(expires).toISOString();
+            }
+            return assertion;
+        }
+        
+        // --- Helper and Utility Functions ---
+        async function hashRecipient(email) {
+            const salt = `salt-${Date.now()}`;
+            const identityStr = email + salt;
+            const encoder = new TextEncoder();
+            const data = encoder.encode(identityStr);
+            const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return { type: 'email', hashed: true, salt: salt, identity: `sha256$${hashHex}` };
+        }
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0;
+                return (c == 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            });
+        }
+        
+        function extractBadgeData(pngBytes) {
+            const decoder = new TextDecoder();
+            // PNG signature is 8 bytes. Chunks start after that.
+            let offset = 8;
+            while (offset < pngBytes.length) {
+                const view = new DataView(pngBytes.buffer);
+                const len = view.getUint32(offset, false);
+                const type = decoder.decode(pngBytes.slice(offset + 4, offset + 8));
+
+                if (type === 'tEXt' || type === 'iTXt') {
+                    const chunkData = pngBytes.slice(offset + 8, offset + 8 + len);
+                    // Find the null separator
+                    const nullIndex = chunkData.indexOf(0);
+                    if (nullIndex > 0) {
+                        const keyword = decoder.decode(chunkData.slice(0, nullIndex));
+                        if (keyword === 'openbadges') {
+                            // For iTXt, there are more fields before the actual data
+                            let dataOffset = nullIndex + 1;
+                            if (type === 'iTXt') {
+                                // Skip compression flag (1), compression method (1), language tag (null-term), translated keyword (null-term)
+                                dataOffset++; // compression flag
+                                dataOffset++; // compression method
+                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++;
+                                dataOffset++; // null after language tag
+                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++;
+                                dataOffset++; // null after translated keyword
+                            }
+                            const assertionText = decoder.decode(chunkData.slice(dataOffset));
+                            return JSON.parse(assertionText);
+                        }
+                    }
+                }
+                
+                if (type === 'IEND') break;
+                offset += 12 + len;
+            }
+            return null;
+        }
+
+        async function bakePng(base64Png, assertionJson) {
+            const pngHeader = "data:image/png;base64,";
+            const pngData = atob(base64Png.substring(pngHeader.length));
+            const pngBytes = new Uint8Array(pngData.length);
+            for (let i = 0; i < pngData.length; i++) {
+                pngBytes[i] = pngData.charCodeAt(i);
+            }
+            
+            const keyword = "openbadges";
+            const text = JSON.stringify(assertionJson);
+            const encoder = new TextEncoder();
+            const keywordBytes = encoder.encode(keyword);
+            const textBytes = encoder.encode(text);
+            
+            const chunkData = new Uint8Array(keywordBytes.length + 1 + textBytes.length);
+            chunkData.set(keywordBytes, 0);
+            chunkData[keywordBytes.length] = 0;
+            chunkData.set(textBytes, keywordBytes.length + 1);
+
+            const chunkType = new Uint8Array([116, 69, 88, 116]); // tEXt
+            const chunkLength = chunkData.length;
+            const fullChunk = new Uint8Array(4 + 4 + chunkLength + 4);
+            const view = new DataView(fullChunk.buffer);
+
+            view.setUint32(0, chunkLength, false);
+            fullChunk.set(chunkType, 4);
+            fullChunk.set(chunkData, 8);
+            const crcData = new Uint8Array(4 + chunkLength);
+            crcData.set(chunkType, 0);
+            crcData.set(chunkData, 4);
+            view.setUint32(8 + chunkLength, crc32(crcData), false);
+            
+            let iendOffset = -1;
+            for (let i = 8; i < pngBytes.length;) {
+                const len = (new DataView(pngBytes.buffer)).getUint32(i, false);
+                const type = new TextDecoder().decode(pngBytes.slice(i + 4, i + 8));
+                if (type === 'IEND') {
+                    iendOffset = i;
+                    break;
+                }
+                i += 12 + len;
+            }
+
+            if (iendOffset === -1) throw new Error("Could not find IEND chunk in PNG.");
+
+            const newPngBytes = new Uint8Array(pngBytes.length + fullChunk.length);
+            newPngBytes.set(pngBytes.slice(0, iendOffset), 0);
+            newPngBytes.set(fullChunk, iendOffset);
+            newPngBytes.set(pngBytes.slice(iendOffset), iendOffset + fullChunk.length);
+            
+            let newPngData = '';
+            for (let i = 0; i < newPngBytes.length; i++) {
+                newPngData += String.fromCharCode(newPngBytes[i]);
+            }
+            return pngHeader + btoa(newPngData);
+        }
+
+        const crcTable = new Int32Array(256);
+        for(let n = 0; n < 256; n++) {
+            let c = n;
+            for(let k = 0; k < 8; k++) {
+                c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+            }
+            crcTable[n] = c;
+        }
+
+        function crc32(bytes) {
+            let crc = -1;
+            for (let i = 0; i < bytes.length; i++) {
+                crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
+            }
+            return (crc ^ -1) >>> 0;
+        }
+    </script>
+</body>
+</html>
