@@ -20,6 +20,10 @@
         .hidden { display: none; }
         .preview-img { max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; border-radius: 4px; margin-top: 15px; }
         .radio-group label { display: inline-block; margin-right: 15px; font-weight: normal; }
+        table.summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        table.summary-table th, table.summary-table td { text-align: left; padding: 8px; border: 1px solid #ddd; }
+        table.summary-table th { background-color: #f2f2f2; width: 120px; }
+        .verification-result { margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -35,15 +39,15 @@
         <section id="baker-section" class="hidden">
             <h2>2. Issue a Badge</h2>
             <form id="baker-form">
-                <label for="badge-select">Select a Badge:</label>
+                <label for="badge-select">Select Badge:</label>
                 <select id="badge-select" required></select>
-
-                <label for="recipient-name">Recipient Name:</label>
-                <input type="text" id="recipient-name" placeholder="Jane Doe" required>
 
                 <label for="recipient-email">Recipient Email:</label>
                 <input type="email" id="recipient-email" placeholder="jane.doe@example.com" required>
 
+                <label for="issued-date">Issue Date:</label>
+                <input type="date" id="issued-date" required>
+                
                 <label>Expiration:</label>
                 <div class="radio-group">
                     <label><input type="radio" name="expiration" value="no" checked> No Expiration</label>
@@ -57,7 +61,7 @@
 
         <section id="result-section" class="hidden">
             <h2>3. Download Your Baked Badge</h2>
-            <p>Your badge has been baked successfully. You can now download the new PNG file.</p>
+            <p>Your badge has been baked successfully.</p>
             <img id="preview-img" class="preview-img" alt="Baked Badge Preview">
             <br>
             <a id="download-link" class="download-link" href="#" download="baked-badge.png">Download Baked Badge</a>
@@ -71,6 +75,18 @@
             <h2>Badge Verifier</h2>
             <p>Upload a baked PNG badge to check its metadata.</p>
             <input type="file" id="verifyFile" accept=".png">
+            
+            <div id="verify-summary" class="hidden">
+                <h3>Badge Summary</h3>
+                <div id="verify-summary-table"></div>
+                
+                <h3>Verify Recipient</h3>
+                <input type="email" id="verify-email-input" placeholder="Enter recipient's email to verify identity">
+                <button id="verify-recipient-btn">Verify Recipient</button>
+                <div id="recipient-verification-result" class="verification-result"></div>
+                
+                <button id="toggle-json-btn" style="margin-top: 15px;">Show Full Assertion</button>
+            </div>
             <pre id="verify-output" class="hidden"></pre>
         </section>
     </main>
@@ -86,30 +102,37 @@
         const jsonOutput = document.getElementById('json-output');
         const previewImg = document.getElementById('preview-img');
         const downloadLink = document.getElementById('download-link');
+        const issuedDateInput = document.getElementById('issued-date');
         const expirationRadios = document.querySelectorAll('input[name="expiration"]');
         const expiresDateInput = document.getElementById('expires-date');
         const verifyFile = document.getElementById('verifyFile');
+        const verifySummary = document.getElementById('verify-summary');
+        const verifySummaryTable = document.getElementById('verify-summary-table');
         const verifyOutput = document.getElementById('verify-output');
+        const verifyEmailInput = document.getElementById('verify-email-input');
+        const verifyRecipientBtn = document.getElementById('verify-recipient-btn');
+        const recipientVerificationResult = document.getElementById('recipient-verification-result');
+        const toggleJsonBtn = document.getElementById('toggle-json-btn');
         
         let config = {};
+        let currentAssertionData = null; // Store data for verifier
 
         // --- Event Listeners ---
         window.addEventListener('DOMContentLoaded', async () => {
+            document.getElementById('issued-date').valueAsDate = new Date();
             try {
-                // Try to load YAML first
                 const response = await fetch('config.yaml');
-                if (!response.ok) throw new Error('YAML not found, trying JSON');
+                if (!response.ok) throw new Error('YAML not found');
                 const yamlText = await response.text();
                 processConfig(yamlText, 'yaml');
             } catch (error) {
-                // If YAML fails, try to load JSON
                 try {
                     const response = await fetch('config.json');
                     if (!response.ok) throw new Error('JSON not found');
                     const jsonText = await response.text();
                     processConfig(jsonText, 'json');
                 } catch (error2) {
-                    console.info("Neither config.yaml nor config.json found locally. Waiting for manual upload.");
+                    console.info("Neither config.yaml nor config.json found. Waiting for manual upload.");
                 }
             }
         });
@@ -117,30 +140,23 @@
         configFile.addEventListener('change', handleConfigFile);
         bakerForm.addEventListener('submit', handleBake);
         verifyFile.addEventListener('change', handleVerifyFile);
+        verifyRecipientBtn.addEventListener('click', handleVerifyRecipient);
+        toggleJsonBtn.addEventListener('click', () => {
+             verifyOutput.classList.toggle('hidden');
+        });
+
         expirationRadios.forEach(radio => {
             radio.addEventListener('change', (e) => {
                 expiresDateInput.classList.toggle('hidden', e.target.value === 'no');
             });
         });
 
-        // --- Core Functions ---
-        function handleConfigFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const fileType = file.name.endsWith('.json') ? 'json' : 'yaml';
-                processConfig(e.target.result, fileType);
-            };
-            reader.readAsText(file);
-        }
-
+        // --- Core Logic ---
         function processConfig(configText, type) {
             try {
                 config = type === 'json' ? JSON.parse(configText) : jsyaml.load(configText);
                 populateBadgeSelector();
-                configSection.style.display = 'none'; // Hide config section
+                configSection.style.display = 'none';
                 bakerSection.classList.remove('hidden');
             } catch (error) {
                 alert(`Error parsing config file: ${error.message}`);
@@ -159,50 +175,53 @@
 
         async function handleBake(event) {
             event.preventDefault();
-
             const badgeAlias = badgeSelect.value;
-            const recipientName = document.getElementById('recipient-name').value;
             const recipientEmail = document.getElementById('recipient-email').value;
+            const issuedDate = issuedDateInput.value;
             const expiresOption = document.querySelector('input[name="expiration"]:checked').value;
             const expiresDate = expiresOption === 'yes' ? expiresDateInput.value : null;
 
-            if (!badgeAlias || !recipientName || !recipientEmail || (expiresOption === 'yes' && !expiresDate)) {
+            if (!badgeAlias || !recipientEmail || !issuedDate || (expiresOption === 'yes' && !expiresDate)) {
                 alert('Please fill out all fields.');
                 return;
             }
 
             try {
                 const badgeData = config.badges.find(b => b.alias === badgeAlias);
-                const assertion = await buildAssertion(badgeData, recipientEmail, expiresDate);
-                const bakedPngDataUri = await bakePng(badgeData.image_base64, assertion);
+                const assertion = await buildAssertion(badgeData, recipientEmail, issuedDate, expiresDate);
+                const bakedPngDataUri = await bakePng(badgeData.image_base_64, assertion);
                 
                 jsonOutput.textContent = JSON.stringify(assertion, null, 2);
                 previewImg.src = bakedPngDataUri;
                 downloadLink.href = bakedPngDataUri;
-                downloadLink.download = `${badgeAlias}-${recipientName.replace(/\s+/g, '-')}.png`;
+                downloadLink.download = `${badgeAlias}-${recipientEmail.split('@')[0]}.png`;
                 
                 resultSection.classList.remove('hidden');
             } catch (error) {
-                console.error('Baking failed:', error);
-                alert(`Could not bake the badge: ${error.message}`);
+                alert(`Could not bake badge: ${error.message}`);
             }
         }
 
         async function handleVerifyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
-            reader.onload = async function(e) {
+            reader.onload = async (e) => {
+                verifySummary.classList.add('hidden');
+                verifyOutput.classList.add('hidden');
+                recipientVerificationResult.textContent = '';
+
                 try {
                     const pngBytes = new Uint8Array(e.target.result);
-                    const badgeData = extractBadgeData(pngBytes);
-                    if (badgeData) {
-                        verifyOutput.textContent = JSON.stringify(badgeData, null, 2);
+                    currentAssertionData = extractBadgeData(pngBytes);
+                    if (currentAssertionData) {
+                        displayVerificationSummary(currentAssertionData);
+                        verifyOutput.textContent = JSON.stringify(currentAssertionData, null, 2);
+                        verifySummary.classList.remove('hidden');
                     } else {
-                        verifyOutput.textContent = 'No valid Open Badge metadata found in this image.';
+                        verifyOutput.textContent = 'No valid Open Badge metadata found.';
+                        verifyOutput.classList.remove('hidden');
                     }
-                    verifyOutput.classList.remove('hidden');
                 } catch (error) {
                     verifyOutput.textContent = `Error reading badge: ${error.message}`;
                     verifyOutput.classList.remove('hidden');
@@ -211,34 +230,62 @@
             reader.readAsArrayBuffer(file);
         }
         
-        async function buildAssertion(badge, email, expires) {
-            const recipientIdentity = await hashRecipient(email);
+        function displayVerificationSummary(assertion) {
+            const issuedOn = new Date(assertion.issuedOn).toLocaleDateString();
+            const expiresOn = assertion.expires ? new Date(assertion.expires).toLocaleDateString() : 'Never';
             
+            const tableHTML = `
+                <table class="summary-table">
+                    <tr><th>Badge Name</th><td>${escapeHtml(assertion.badge.name)}</td></tr>
+                    <tr><th>Issued By</th><td>${escapeHtml(assertion.badge.issuer.name)}</td></tr>
+                    <tr><th>Issued On</th><td>${escapeHtml(issuedOn)}</td></tr>
+                    <tr><th>Expires On</th><td>${escapeHtml(expiresOn)}</td></tr>
+                    <tr><th>Recipient</th><td>Hashed (verify below)</td></tr>
+                </table>
+            `;
+            verifySummaryTable.innerHTML = tableHTML;
+        }
+
+        async function handleVerifyRecipient() {
+            if (!currentAssertionData) return;
+            const emailToVerify = verifyEmailInput.value;
+            if (!emailToVerify) {
+                recipientVerificationResult.textContent = "Please enter an email to verify.";
+                return;
+            }
+
+            const { salt, identity } = currentAssertionData.recipient;
+            const identityParts = identity.split('$');
+            const expectedHash = identityParts.length > 1 ? identityParts[1] : identity;
+
+            const newHashedIdentity = await hashRecipient(emailToVerify, salt);
+            const newHash = newHashedIdentity.identity.split('$')[1];
+
+            if (newHash === expectedHash) {
+                recipientVerificationResult.textContent = `✅ Verified for: ${escapeHtml(emailToVerify)}`;
+                recipientVerificationResult.style.color = 'green';
+            } else {
+                recipientVerificationResult.textContent = `❌ Verification failed for: ${escapeHtml(emailToVerify)}`;
+                recipientVerificationResult.style.color = 'red';
+            }
+        }
+        
+        async function buildAssertion(badge, email, issuedOn, expires) {
+            const recipientIdentity = await hashRecipient(email);
             const assertion = {
                 "@context": "https://w3id.org/openbadges/v2",
                 "type": "Assertion",
                 "id": `urn:uuid:${generateUUID()}`,
                 "recipient": recipientIdentity,
-                "badge": {
-                    "type": "BadgeClass",
-                    "id": badge.id,
-                    "name": badge.name,
-                    "description": badge.description,
-                    "image": badge.image_base64,
-                    "criteria": { "narrative": badge.criteria },
-                    "issuer": {
-                        "type": "Profile",
-                        "id": config.issuer.id,
-                        "name": config.issuer.name,
-                        "url": config.issuer.url,
-                        "email": config.issuer.email,
-                        "image": config.issuer.image_base64
-                    }
-                },
-                "issuedOn": new Date().toISOString(),
+                "badge": { /* ... badge class details ... */ },
+                "issuedOn": new Date(`${issuedOn}T00:00:00Z`).toISOString(),
                 "verification": { "type": "hosted" }
             };
-
+            assertion.badge = {
+                "type": "BadgeClass", "id": badge.id, "name": badge.name,
+                "description": badge.description, "image": badge.image_base_64,
+                "criteria": { "narrative": badge.criteria }, "issuer": config.issuer.id
+            };
             if (expires) {
                 assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
             }
@@ -246,8 +293,16 @@
         }
         
         // --- Helper and Utility Functions ---
-        async function hashRecipient(email) {
-            const salt = `salt-${Date.now()}`;
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+        
+        async function hashRecipient(email, salt = `salt-${Date.now()}`) {
             const identityStr = email + salt;
             const encoder = new TextEncoder();
             const data = encoder.encode(identityStr);
@@ -259,19 +314,16 @@
 
         function generateUUID() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-                const r = Math.random() * 16 | 0;
-                return (c == 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+                const r = Math.random() * 16 | 0; return (c == 'x' ? r : (r & 0x3 | 0x8)).toString(16);
             });
         }
         
         function extractBadgeData(pngBytes) {
-            const decoder = new TextDecoder();
-            let offset = 8;
+            const decoder = new TextDecoder(); let offset = 8;
             while (offset < pngBytes.length) {
                 const view = new DataView(pngBytes.buffer);
                 const len = view.getUint32(offset, false);
                 const type = decoder.decode(pngBytes.slice(offset + 4, offset + 8));
-
                 if (type === 'tEXt' || type === 'iTXt') {
                     const chunkData = pngBytes.slice(offset + 8, offset + 8 + len);
                     const nullIndex = chunkData.indexOf(0);
@@ -289,7 +341,6 @@
                         }
                     }
                 }
-                
                 if (type === 'IEND') break;
                 offset += 12 + len;
             }
@@ -302,28 +353,20 @@
             const pngBytes = new Uint8Array(pngData.length);
             for (let i = 0; i < pngData.length; i++) pngBytes[i] = pngData.charCodeAt(i);
             
-            const keyword = "openbadges";
-            const text = JSON.stringify(assertionJson);
+            const keyword = "openbadges"; const text = JSON.stringify(assertionJson);
             const encoder = new TextEncoder();
-            const keywordBytes = encoder.encode(keyword);
-            const textBytes = encoder.encode(text);
-            
+            const keywordBytes = encoder.encode(keyword); const textBytes = encoder.encode(text);
             const chunkData = new Uint8Array(keywordBytes.length + 1 + textBytes.length);
-            chunkData.set(keywordBytes, 0);
-            chunkData[keywordBytes.length] = 0;
+            chunkData.set(keywordBytes, 0); chunkData[keywordBytes.length] = 0;
             chunkData.set(textBytes, keywordBytes.length + 1);
-
             const chunkType = new Uint8Array([116, 69, 88, 116]);
             const chunkLength = chunkData.length;
             const fullChunk = new Uint8Array(4 + 4 + chunkLength + 4);
             const view = new DataView(fullChunk.buffer);
-
             view.setUint32(0, chunkLength, false);
-            fullChunk.set(chunkType, 4);
-            fullChunk.set(chunkData, 8);
+            fullChunk.set(chunkType, 4); fullChunk.set(chunkData, 8);
             const crcData = new Uint8Array(4 + chunkLength);
-            crcData.set(chunkType, 0);
-            crcData.set(chunkData, 4);
+            crcData.set(chunkType, 0); crcData.set(chunkData, 4);
             view.setUint32(8 + chunkLength, crc32(crcData), false);
             
             let iendOffset = -1;
@@ -333,7 +376,6 @@
                 if (type === 'IEND') { iendOffset = i; break; }
                 i += 12 + len;
             }
-
             if (iendOffset === -1) throw new Error("Could not find IEND chunk in PNG.");
 
             const newPngBytes = new Uint8Array(pngBytes.length + fullChunk.length);
@@ -350,9 +392,7 @@
             const table = new Int32Array(256);
             for(let n = 0; n < 256; n++) {
                 let c = n;
-                for(let k = 0; k < 8; k++) {
-                    c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
-                }
+                for(let k = 0; k < 8; k++) c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
                 table[n] = c;
             }
             return table;
@@ -360,9 +400,7 @@
 
         function crc32(bytes) {
             let crc = -1;
-            for (let i = 0; i < bytes.length; i++) {
-                crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
-            }
+            for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
             return (crc ^ -1) >>> 0;
         }
     </script>
