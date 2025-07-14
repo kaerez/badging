@@ -28,7 +28,7 @@
         
         <section id="config-section">
             <h2>1. Load Configuration</h2>
-            <p>Attempting to load <strong>config.yaml</strong> automatically. If it fails, please load your <strong>config.yaml</strong> or <strong>config.json</strong> file manually.</p>
+            <p>Attempting to load <strong>config.yaml</strong> or <strong>config.json</strong> automatically. If neither is found, please load your config file manually.</p>
             <input type="file" id="configFile" accept=".yaml,.yml,.json">
         </section>
 
@@ -94,7 +94,26 @@
         let config = {};
 
         // --- Event Listeners ---
-        window.addEventListener('DOMContentLoaded', loadDefaultConfig);
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Try to load YAML first
+                const response = await fetch('config.yaml');
+                if (!response.ok) throw new Error('YAML not found, trying JSON');
+                const yamlText = await response.text();
+                processConfig(yamlText, 'yaml');
+            } catch (error) {
+                // If YAML fails, try to load JSON
+                try {
+                    const response = await fetch('config.json');
+                    if (!response.ok) throw new Error('JSON not found');
+                    const jsonText = await response.text();
+                    processConfig(jsonText, 'json');
+                } catch (error2) {
+                    console.info("Neither config.yaml nor config.json found locally. Waiting for manual upload.");
+                }
+            }
+        });
+        
         configFile.addEventListener('change', handleConfigFile);
         bakerForm.addEventListener('submit', handleBake);
         verifyFile.addEventListener('change', handleVerifyFile);
@@ -105,18 +124,6 @@
         });
 
         // --- Core Functions ---
-        async function loadDefaultConfig() {
-            try {
-                const response = await fetch('config.yaml');
-                if (response.ok) {
-                    const yamlText = await response.text();
-                    processConfig(yamlText, 'yaml');
-                }
-            } catch (error) {
-                console.info("config.yaml not found, waiting for manual upload.");
-            }
-        }
-
         function handleConfigFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -133,7 +140,7 @@
             try {
                 config = type === 'json' ? JSON.parse(configText) : jsyaml.load(configText);
                 populateBadgeSelector();
-                configSection.classList.add('hidden');
+                configSection.style.display = 'none'; // Hide config section
                 bakerSection.classList.remove('hidden');
             } catch (error) {
                 alert(`Error parsing config file: ${error.message}`);
@@ -233,7 +240,7 @@
             };
 
             if (expires) {
-                assertion.expires = new Date(expires).toISOString();
+                assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
             }
             return assertion;
         }
@@ -259,7 +266,6 @@
         
         function extractBadgeData(pngBytes) {
             const decoder = new TextDecoder();
-            // PNG signature is 8 bytes. Chunks start after that.
             let offset = 8;
             while (offset < pngBytes.length) {
                 const view = new DataView(pngBytes.buffer);
@@ -268,21 +274,15 @@
 
                 if (type === 'tEXt' || type === 'iTXt') {
                     const chunkData = pngBytes.slice(offset + 8, offset + 8 + len);
-                    // Find the null separator
                     const nullIndex = chunkData.indexOf(0);
                     if (nullIndex > 0) {
                         const keyword = decoder.decode(chunkData.slice(0, nullIndex));
                         if (keyword === 'openbadges') {
-                            // For iTXt, there are more fields before the actual data
                             let dataOffset = nullIndex + 1;
                             if (type === 'iTXt') {
-                                // Skip compression flag (1), compression method (1), language tag (null-term), translated keyword (null-term)
-                                dataOffset++; // compression flag
-                                dataOffset++; // compression method
-                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++;
-                                dataOffset++; // null after language tag
-                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++;
-                                dataOffset++; // null after translated keyword
+                                dataOffset += 2; 
+                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++; dataOffset++;
+                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++; dataOffset++;
                             }
                             const assertionText = decoder.decode(chunkData.slice(dataOffset));
                             return JSON.parse(assertionText);
@@ -300,9 +300,7 @@
             const pngHeader = "data:image/png;base64,";
             const pngData = atob(base64Png.substring(pngHeader.length));
             const pngBytes = new Uint8Array(pngData.length);
-            for (let i = 0; i < pngData.length; i++) {
-                pngBytes[i] = pngData.charCodeAt(i);
-            }
+            for (let i = 0; i < pngData.length; i++) pngBytes[i] = pngData.charCodeAt(i);
             
             const keyword = "openbadges";
             const text = JSON.stringify(assertionJson);
@@ -315,7 +313,7 @@
             chunkData[keywordBytes.length] = 0;
             chunkData.set(textBytes, keywordBytes.length + 1);
 
-            const chunkType = new Uint8Array([116, 69, 88, 116]); // tEXt
+            const chunkType = new Uint8Array([116, 69, 88, 116]);
             const chunkLength = chunkData.length;
             const fullChunk = new Uint8Array(4 + 4 + chunkLength + 4);
             const view = new DataView(fullChunk.buffer);
@@ -332,10 +330,7 @@
             for (let i = 8; i < pngBytes.length;) {
                 const len = (new DataView(pngBytes.buffer)).getUint32(i, false);
                 const type = new TextDecoder().decode(pngBytes.slice(i + 4, i + 8));
-                if (type === 'IEND') {
-                    iendOffset = i;
-                    break;
-                }
+                if (type === 'IEND') { iendOffset = i; break; }
                 i += 12 + len;
             }
 
@@ -347,20 +342,21 @@
             newPngBytes.set(pngBytes.slice(iendOffset), iendOffset + fullChunk.length);
             
             let newPngData = '';
-            for (let i = 0; i < newPngBytes.length; i++) {
-                newPngData += String.fromCharCode(newPngBytes[i]);
-            }
+            for (let i = 0; i < newPngBytes.length; i++) newPngData += String.fromCharCode(newPngBytes[i]);
             return pngHeader + btoa(newPngData);
         }
 
-        const crcTable = new Int32Array(256);
-        for(let n = 0; n < 256; n++) {
-            let c = n;
-            for(let k = 0; k < 8; k++) {
-                c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+        const crcTable = (() => {
+            const table = new Int32Array(256);
+            for(let n = 0; n < 256; n++) {
+                let c = n;
+                for(let k = 0; k < 8; k++) {
+                    c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+                }
+                table[n] = c;
             }
-            crcTable[n] = c;
-        }
+            return table;
+        })();
 
         function crc32(bytes) {
             let crc = -1;
