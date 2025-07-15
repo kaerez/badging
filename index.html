@@ -73,7 +73,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         <div class="tabs">
             <div class="tab-buttons">
                 <button id="manager-tab-btn" class="active">Issuer Management</button>
-                <button id="bake-tab-btn" disabled title="Load or create a configuration first">Bake a Badge</button>
+                <button id="baker-tab-btn" disabled title="Load or create a configuration first">Bake a Badge</button>
                 <button id="verify-tab-btn">Verify a Badge</button>
             </div>
             <button id="clear-session-btn" class="secondary hidden">Clear & Lock</button>
@@ -211,7 +211,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
         const tabs = {
             manager: { btn: document.getElementById('manager-tab-btn'), view: document.getElementById('manager-view') },
-            baker:   { btn: document.getElementById('bake-tab-btn'),   view: document.getElementById('baker-view') },
+            baker:   { btn: document.getElementById('baker-tab-btn'),   view: document.getElementById('baker-view') },
             verify:  { btn: document.getElementById('verify-tab-btn'), view: document.getElementById('verifier-view') }
         };
         const configFile = document.getElementById('configFile');
@@ -478,9 +478,8 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const newConfig = { issuer: {}, badges: [] };
             
             document.querySelectorAll('#issuer-fields .form-field').forEach(input => {
-                if (input.dataset.customKey || input.dataset.customValue) return;
                 const key = input.id.split('-')[1];
-                if(input.value) newConfig.issuer[key] = input.value;
+                if(input.value && !input.dataset.customKey && !input.dataset.customValue) newConfig.issuer[key] = input.value;
             });
             document.querySelectorAll('#issuer-custom-fields .custom-field').forEach(div => {
                 const keyInput = div.querySelector('[data-custom-key]');
