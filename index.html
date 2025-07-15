@@ -1,12 +1,4 @@
 <!DOCTYPE html>
-<!--
-Copyright (C) 2025 KSEC - Erez Kalman. All Rights Reserved.
-
-SPDX-License-Identifier: (AGPL-3.0-or-later OR LicenseRef-Erez_Kalman_KSEC-Commercial)
-
-This source code is licensed under a dual-license model.
-See the LICENSE, and LICENSE.AGPL.md files for full details.
--->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -23,7 +15,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
         input[type="text"], input[type="email"], input[type="date"], input[type="password"], input[type="number"], select, textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
         textarea { min-height: 80px; font-family: "Courier New", Courier, monospace; }
-        #json-viewer-modal textarea, #image-viewer-modal textarea { height: 300px; }
+        #json-viewer-modal textarea { height: 300px; }
         button, .download-link { display: inline-block; background-color: var(--primary-color); color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; margin-right: 10px; margin-top: 5px; text-decoration: none; font-family: inherit; }
         button:hover, .download-link:hover { background-color: var(--primary-hover); color: white; }
         button:disabled { background-color: #6c757d; cursor: not-allowed; }
@@ -341,13 +333,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 addCustomFieldInput('issuer-custom-fields', 'issuer-custom', key, customIssuerFields[key]);
             }
             
-            document.getElementById('generate-key-btn').addEventListener('click', generateKeyPair);
-            if (document.getElementById('toggle-pk-visibility')) {
-                document.getElementById('toggle-pk-visibility').addEventListener('click', togglePrivateKeyVisibility);
-            }
-            if (document.getElementById('issuer-image_base_64-upload')){
-                document.getElementById('issuer-image_base_64-upload').addEventListener('change', (e) => handleImageUpload(e, 'issuer-image_base_64-preview', 'issuer-image_base_64'));
-            }
+            const genKeyBtn = document.getElementById('generate-key-btn');
+            if (genKeyBtn) genKeyBtn.addEventListener('click', generateKeyPair);
+            
+            const togglePkBtn = document.getElementById('toggle-pk-visibility');
+            if (togglePkBtn) togglePkBtn.addEventListener('click', togglePrivateKeyVisibility);
+
+            const issuerImgUpload = document.getElementById('issuer-image_base_64-upload');
+            if (issuerImgUpload) issuerImgUpload.addEventListener('change', (e) => handleImageUpload(e, 'issuer-image_base_64-preview', 'issuer-image_base_64'));
             
             const badgesContainer = document.getElementById('badges-container');
             badgesContainer.innerHTML = '';
@@ -413,6 +406,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             
             let html = Object.entries(fields[fieldType]).map(([key, opts]) => {
                 const value = (data && data[key]) ? data[key] : '';
+                const title = opts.h || `A comma-separated list of keywords.`;
                 let inputElement;
                 if (opts.t === 'image') {
                     const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
@@ -787,8 +781,8 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         
         async function displayVerificationSummary(assertion, isSigned, jws) {
             const fieldMap = {
-                badge: { label: 'Badge Details', fields: { 'name': 'Name', 'description': 'Description', 'image': 'Image', 'criteria.narrative': 'Criteria' } },
-                issuer: { label: 'Issuer Details', fields: { 'name': 'Name', 'url': 'URL', 'id': 'Profile URL', 'image': 'Logo' } },
+                badge: { label: 'Badge Details', fields: { 'name': 'Name', 'description': 'Description', 'image_base_64': 'Image', 'criteria.narrative': 'Criteria' } },
+                issuer: { label: 'Issuer Details', fields: { 'name': 'Name', 'url': 'URL', 'id': 'Profile URL', 'image_base_64': 'Logo' } },
                 recipient: { label: 'Recipient', fields: { 'identity': 'Identity', 'hashed': 'Hashed', 'salt': 'Salt', 'type': 'Type' } },
                 assertion: { label: 'Assertion Details', fields: { 'issuedOn': 'Issued On', 'expires': 'Expires', 'id': 'ID', 'evidence.id': 'Evidence' } }
             };
