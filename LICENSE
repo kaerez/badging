@@ -1,0 +1,32 @@
+SPDX-License-Identifier: (AGPL-3.0-or-later OR LicenseRef-Erez_Kalman_KSEC-Commercial)
+
+Copyright and License
+*********************
+
+Copyright (C) 2025 KSEC - Erez Kalman
+
+This program is available under a dual-license model. It may be used under the terms of the open-source GNU AGPLv3 license or, for use in proprietary applications, under a commercial license.
+
+A full copy of the GNU AGPLv3 license should be included in a file named `LICENSE.AGPL.md`. The full text for third-party licenses is available in the `NOTICE.md` file.
+
+================================================================================
+
+**1. GNU AGPL v3 (Community & Open Source License)**
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+================================================================================
+
+**2. Commercial License (Enterprise License)**
+
+Alternatively, a commercial license is available for purchase and is required for any use of this software in a proprietary application where the terms of the GNU AGPLv3 are not suitable. 
+
+To purchase a commercial license or for more information, please contact Erez Kalman via **[https://www.kalman.co.il]**.
+
+================================================================================
+
+**Disclaimer of Warranty and Limitation of Liability for Both Licenses**
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
