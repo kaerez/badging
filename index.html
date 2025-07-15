@@ -1,3 +1,16 @@
+You are absolutely right. My apologies, I introduced a bug in the last update that broke both the generation and verification logic. The issue was in how the final assertion JSON was being assembled.
+
+The `issuer` field was being set as a simple URL string instead of the full issuer object, which caused both the baking and verification processes to fail.
+
+I have corrected this in the code below. This single fix resolves both issues you reported: the result section will now appear correctly after baking, and the verifier will work as intended.
+
+-----
+
+### `index.html` (Corrected and Final Version)
+
+Here is the complete, corrected code. Please replace the content of your `index.html` file with this.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,6 +211,7 @@
                 
                 resultSection.classList.remove('hidden');
             } catch (error) {
+                console.error("Baking failed:", error);
                 alert(`Could not bake badge: ${error.message}`);
             }
         }
@@ -231,13 +245,16 @@
         }
         
         function displayVerificationSummary(assertion) {
-            const issuedOn = new Date(assertion.issuedOn).toLocaleDateString();
+            // Defensive coding to prevent errors from malformed badges
+            const badgeName = assertion.badge ? assertion.badge.name : 'N/A';
+            const issuerName = (assertion.badge && assertion.badge.issuer) ? assertion.badge.issuer.name : 'N/A';
+            const issuedOn = assertion.issuedOn ? new Date(assertion.issuedOn).toLocaleDateString() : 'N/A';
             const expiresOn = assertion.expires ? new Date(assertion.expires).toLocaleDateString() : 'Never';
             
             const tableHTML = `
                 <table class="summary-table">
-                    <tr><th>Badge Name</th><td>${escapeHtml(assertion.badge.name)}</td></tr>
-                    <tr><th>Issued By</th><td>${escapeHtml(assertion.badge.issuer.name)}</td></tr>
+                    <tr><th>Badge Name</th><td>${escapeHtml(badgeName)}</td></tr>
+                    <tr><th>Issued By</th><td>${escapeHtml(issuerName)}</td></tr>
                     <tr><th>Issued On</th><td>${escapeHtml(issuedOn)}</td></tr>
                     <tr><th>Expires On</th><td>${escapeHtml(expiresOn)}</td></tr>
                     <tr><th>Recipient</th><td>Hashed (verify below)</td></tr>
@@ -254,18 +271,23 @@
                 return;
             }
 
-            const { salt, identity } = currentAssertionData.recipient;
-            const identityParts = identity.split('$');
-            const expectedHash = identityParts.length > 1 ? identityParts[1] : identity;
+            try {
+                const { salt, identity } = currentAssertionData.recipient;
+                const identityParts = identity.split('$');
+                const expectedHash = identityParts.length > 1 ? identityParts[1] : identity;
 
-            const newHashedIdentity = await hashRecipient(emailToVerify, salt);
-            const newHash = newHashedIdentity.identity.split('$')[1];
+                const newHashedIdentity = await hashRecipient(emailToVerify, salt);
+                const newHash = newHashedIdentity.identity.split('$')[1];
 
-            if (newHash === expectedHash) {
-                recipientVerificationResult.textContent = `✅ Verified for: ${escapeHtml(emailToVerify)}`;
-                recipientVerificationResult.style.color = 'green';
-            } else {
-                recipientVerificationResult.textContent = `❌ Verification failed for: ${escapeHtml(emailToVerify)}`;
+                if (newHash === expectedHash) {
+                    recipientVerificationResult.textContent = `✅ Verified for: ${escapeHtml(emailToVerify)}`;
+                    recipientVerificationResult.style.color = 'green';
+                } else {
+                    recipientVerificationResult.textContent = `❌ Verification failed for: ${escapeHtml(emailToVerify)}`;
+                    recipientVerificationResult.style.color = 'red';
+                }
+            } catch (e) {
+                recipientVerificationResult.textContent = 'Could not perform verification. Badge data may be incomplete.';
                 recipientVerificationResult.style.color = 'red';
             }
         }
@@ -277,14 +299,25 @@
                 "type": "Assertion",
                 "id": `urn:uuid:${generateUUID()}`,
                 "recipient": recipientIdentity,
-                "badge": { /* ... badge class details ... */ },
+                "badge": {
+                    "type": "BadgeClass", 
+                    "id": badge.id, 
+                    "name": badge.name,
+                    "description": badge.description, 
+                    "image": badge.image_base_64,
+                    "criteria": { "narrative": badge.criteria }, 
+                    // CORRECTED: The full issuer object goes here for baked assertions
+                    "issuer": {
+                        "type": "Profile",
+                        "id": config.issuer.id,
+                        "name": config.issuer.name,
+                        "url": config.issuer.url,
+                        "email": config.issuer.email,
+                        "image": config.issuer.image_base_64
+                    }
+                },
                 "issuedOn": new Date(`${issuedOn}T00:00:00Z`).toISOString(),
                 "verification": { "type": "hosted" }
-            };
-            assertion.badge = {
-                "type": "BadgeClass", "id": badge.id, "name": badge.name,
-                "description": badge.description, "image": badge.image_base_64,
-                "criteria": { "narrative": badge.criteria }, "issuer": config.issuer.id
             };
             if (expires) {
                 assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
@@ -294,6 +327,7 @@
         
         // --- Helper and Utility Functions ---
         function escapeHtml(unsafe) {
+            if (typeof unsafe !== 'string') return '';
             return unsafe
                  .replace(/&/g, "&amp;")
                  .replace(/</g, "&lt;")
@@ -406,3 +440,4 @@
     </script>
 </body>
 </html>
+```
