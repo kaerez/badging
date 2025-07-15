@@ -1,0 +1,7 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "type": "CryptographicKey",
+  "id": "https://sfdc.co/url/certpub",
+  "owner": "https://sfdc.co/url/certiss",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBNp+AJrnE+N4auqanTpSnNYphKBI\nh6Oy9M6i55E3lWapyHEAn0KHgiSu1VgYyfdxKtjjFb5q6g5fVrOdiSku+9E=\n-----END PUBLIC KEY-----"
+}
