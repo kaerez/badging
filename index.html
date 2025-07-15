@@ -494,7 +494,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             
             document.querySelectorAll('#issuer-fields .form-field').forEach(input => {
                 const key = input.id.split('-')[1];
-                if(input.value) newConfig.issuer[key] = input.value;
+                if(input.value && !input.dataset.customKey && !input.dataset.customValue) newConfig.issuer[key] = input.value;
             });
             document.querySelectorAll('#issuer-custom-fields .custom-field').forEach(div => {
                 const keyInput = div.querySelector('[data-custom-key]');
@@ -513,6 +513,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 const index = entry.dataset.index;
                 
                 entry.querySelectorAll('.standard-fields .form-field').forEach(input => {
+                    if (input.dataset.customKey || input.dataset.customValue) return;
                     const key = input.id.split('-')[2];
                     if(input.value) badge[key] = input.value;
                 });
@@ -770,7 +771,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 const isSigned = verificationType === 'signed';
                 const bakedPngDataUri = await bakePng(badgeData.image_base_64, assertion, isSigned);
                 
-                document.getElementById('json-output').textContent = isSigned ? assertion : JSON.stringify(assertion, null, 2);
+                let displayAssertion = assertion;
+                if (isSigned) {
+                    try {
+                        displayAssertion = JSON.parse(atob(assertion.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+                    } catch(e) { /* leave as JWS if decode fails */ }
+                }
+                
+                document.getElementById('json-output').textContent = JSON.stringify(displayAssertion, null, 2);
                 document.getElementById('preview-img').src = bakedPngDataUri;
                 const downloadLink = document.getElementById('download-link');
                 downloadLink.href = bakedPngDataUri;
@@ -796,14 +804,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const recipientIdentity = await hashRecipient(email);
             const issuerData = extractDataFromForm().issuer;
             
+            const { privateKey, ...publicIssuerData } = issuerData;
             let badgeClass = {
                 type: "BadgeClass", id: badge.id, name: badge.name,
                 description: badge.description, image: badge.image_base_64,
                 criteria: { narrative: badge.criteria },
-                issuer: verificationType === 'signed' ? issuerData.id : { ...issuerData }
+                issuer: verificationType === 'signed' ? publicIssuerData.id : publicIssuerData
             };
-            if(badgeClass.issuer.privateKey) delete badgeClass.issuer.privateKey;
-            if(badgeClass.issuer.customFields) delete badgeClass.issuer.customFields;
+            delete badgeClass.issuer.publicKey;
             if (badge.tags) badgeClass.tags = badge.tags.split(',').map(t => t.trim());
             
             if (issuerData.customFields) {
@@ -968,24 +976,33 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         }
 
         async function verifyUrl(url) {
+            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
             try {
-                const response = await fetch(url, { mode: 'cors' });
+                const response = await fetch(proxyUrl);
                 return { success: response.ok, reason: response.ok ? 'OK' : `HTTP ${response.status}` };
-            } catch (e) { return { success: false, reason: 'Network Error' }; }
+            } catch (e) {
+                return { success: false, reason: 'Network Error' };
+            }
         }
 
         async function verifyJws(jws, publicKeyUrl) {
+            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(publicKeyUrl);
             try {
                 const parts = jws.split('.');
                 if (parts.length !== 3) return { success: false, reason: 'Invalid JWS format' };
-                const response = await fetch(publicKeyUrl, { mode: 'cors' });
+
+                const response = await fetch(proxyUrl);
                 if (!response.ok) return { success: false, reason: `Could not fetch public key (HTTP ${response.status})` };
+                
                 const issuerProfile = await response.json();
                 const publicKeyJwk = issuerProfile.publicKey;
-                if(!publicKeyJwk) return { success: false, reason: 'Public key not found in issuer profile' };
+                if (!publicKeyJwk) return { success: false, reason: 'Public key not found in issuer profile' };
+                
                 const publicKey = await window.crypto.subtle.importKey("jwk", publicKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
+                
                 const dataToVerify = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
                 const signature = new Uint8Array(atob(parts[2].replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
+                
                 const isValid = await window.crypto.subtle.verify({ name: "ECDSA", hash: { name: "SHA-256" } }, publicKey, signature, dataToVerify);
                 return { success: isValid, reason: isValid ? 'OK' : 'Signature mismatch' };
             } catch (e) {
@@ -1086,17 +1103,25 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const text = isSigned ? assertion : JSON.stringify(assertion);
             const encoder = new TextEncoder();
             const keywordBytes = encoder.encode(keyword); const textBytes = encoder.encode(text);
-            const chunkData = new Uint8Array(keywordBytes.length + 1 + textBytes.length);
-            chunkData.set(keywordBytes, 0); chunkData[keywordBytes.length] = 0;
-            chunkData.set(textBytes, keywordBytes.length + 1);
-            const chunkType = new Uint8Array([116, 69, 88, 116]);
-            const chunkLength = chunkData.length;
+
+            const iTXtChunkData = new Uint8Array(keywordBytes.length + 5 + textBytes.length);
+            let i = 0;
+            iTXtChunkData.set(keywordBytes, i); i+= keywordBytes.length;
+            iTXtChunkData[i++] = 0; // Null separator
+            iTXtChunkData[i++] = 0; // Compression flag: 0 (not compressed)
+            iTXtChunkData[i++] = 0; // Compression method: 0 (zlib)
+            iTXtChunkData[i++] = 0; // Language tag: null
+            iTXtChunkData[i++] = 0; // Translated keyword: null
+            iTXtChunkData.set(textBytes, i);
+            
+            const chunkType = new Uint8Array([105, 84, 88, 116]); // iTXt
+            const chunkLength = iTXtChunkData.length;
             const fullChunk = new Uint8Array(4 + 4 + chunkLength + 4);
             const view = new DataView(fullChunk.buffer);
             view.setUint32(0, chunkLength, false);
-            fullChunk.set(chunkType, 4); fullChunk.set(chunkData, 8);
+            fullChunk.set(chunkType, 4); fullChunk.set(iTXtChunkData, 8);
             const crcData = new Uint8Array(4 + chunkLength);
-            crcData.set(chunkType, 0); crcData.set(chunkData, 4);
+            crcData.set(chunkType, 0); crcData.set(iTXtChunkData, 4);
             view.setUint32(8 + chunkLength, crc32(crcData), false);
             
             let iendOffset = -1;
