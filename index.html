@@ -13,7 +13,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Badge Management Suite</title>
     <link rel="icon" href="favicon.ico" sizes="32x32">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
     <style>
         :root { --primary-color: #007bff; --primary-hover: #0056b3; --border-color: #dee2e6; --danger-color: #dc3545; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #f4f7f9; color: #333; margin: 0; padding: 20px; }
@@ -72,8 +71,8 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         <div id="manager-view">
             <section id="config-loader-section">
                 <h2>Load or Create Configuration</h2>
-                <p>Load a plain or encrypted <strong>config.yaml / config.json</strong> file, or create a new configuration from scratch.</p>
-                <input type="file" id="configFile" accept=".yaml,.yml,.json">
+                <p>Load a plain or encrypted <strong>config.json</strong> file, or create a new configuration from scratch.</p>
+                <input type="file" id="configFile" accept=".json">
                 <button type="button" id="create-new-config-btn">Create New Config</button>
                 <div id="config-error" class="error-message hidden"></div>
             </section>
@@ -197,10 +196,15 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         Object.values(tabs).forEach(tab => tab.btn.addEventListener('click', () => switchTab(tab.btn.id.split('-')[0])));
         configFile.addEventListener('change', handleConfigFile);
         createNewConfigBtn.addEventListener('click', createNewConfig);
-        addBadgeBtn.addEventListener('click', () => addBadgeEntry());
-        exportPlainBtn.addEventListener('click', handleExportPlain);
-        exportEncryptedBtn.addEventListener('click', handleExportEncrypted);
-        generateIssuerJsonBtn.addEventListener('click', () => generateSingleJson('issuer'));
+        
+        function initManagerFormListeners() {
+            document.getElementById('add-badge-btn').addEventListener('click', () => addBadgeEntry());
+            document.getElementById('export-plain-btn').addEventListener('click', handleExportPlain);
+            document.getElementById('export-encrypted-btn').addEventListener('click', handleExportEncrypted);
+            document.getElementById('generate-issuer-json-btn').addEventListener('click', () => generateSingleJson('issuer'));
+        }
+        initManagerFormListeners(); // Attach listeners for the static part of the manager form
+        
         clearSessionBtn.addEventListener('click', clearSession);
 
         function switchTab(tabName) {
@@ -223,15 +227,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 issuer: { id: "", name: "", url: "", email: "", publicKey: "", privateKey: "" },
                 badges: [{ alias: "", id: "", name: "", description: "", criteria: "", image_base_64: "", tags: "" }]
             };
-            processConfig(JSON.stringify(defaultConfig), 'json');
+            processConfig(JSON.stringify(defaultConfig));
         }
 
         async function handleConfigFile(event) {
             const file = event.target.files[0];
             if (!file) return;
-            const allowedTypes = ['application/json', 'application/x-yaml', 'text/yaml'];
-            if (!allowedTypes.includes(file.type) && !file.name.endsWith('.json') && !file.name.endsWith('.yaml') && !file.name.endsWith('.yml')) {
-                displayError(configError, "Invalid file type. Please upload a JSON or YAML file.");
+            if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+                displayError(configError, "Invalid file type. Please upload a JSON file.");
                 return;
             }
 
@@ -244,21 +247,21 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                         const password = await promptForPassword('Decrypt Configuration');
                         if (!password) return;
                         const decryptedText = await decryptData(parsedJson, password);
-                        processConfig(decryptedText, 'json');
+                        processConfig(decryptedText);
                     } else {
-                        processConfig(content, 'json');
+                        processConfig(content);
                     }
-                } catch (jsonError) {
-                    processConfig(content, 'yaml');
+                } catch (err) {
+                    displayError(configError, `Error parsing JSON file: ${err.message}`);
                 }
             };
             reader.readAsText(file);
         }
 
-        function processConfig(configText, type) {
+        function processConfig(configText) {
             configError.classList.add('hidden');
             try {
-                config = type === 'json' ? JSON.parse(configText) : jsyaml.load(configText);
+                config = JSON.parse(configText);
                 if (!config.issuer || !config.badges) throw new Error("Config must contain 'issuer' and 'badges' keys.");
                 
                 tabs.baker.view.innerHTML = document.getElementById('baker-template').innerHTML;
@@ -666,15 +669,16 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             if (isSigned) {
                 const creatorUrl = assertion.verification?.creator;
                 if(creatorUrl) {
-                    const isValid = await verifyJws(jws, creatorUrl);
-                    verificationStatus.signature = isValid ? '✅ Verified' : '❌ Invalid Signature';
+                    const verifyResult = await verifyJws(jws, creatorUrl);
+                    verificationStatus.signature = verifyResult.success ? '✅ Verified' : `❌ Invalid Signature (${verifyResult.reason})`;
                 } else {
                     verificationStatus.signature = '⚠️ No public key URL found in badge for verification.';
                 }
             } else {
                 const issuerUrl = assertion.badge?.issuer?.id;
                 if(issuerUrl) {
-                    verificationStatus.hosted = await verifyUrl(issuerUrl) ? '✅ Verified' : '❌ Host Check Failed';
+                    const verifyResult = await verifyUrl(issuerUrl);
+                    verificationStatus.hosted = verifyResult.success ? '✅ Verified' : `❌ Host Check Failed (${verifyResult.reason})`;
                 } else {
                     verificationStatus.hosted = '⚠️ No issuer URL found';
                 }
@@ -699,30 +703,31 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         async function verifyUrl(url) {
             try {
                 const response = await fetch(url, { mode: 'cors' });
-                return response.ok;
-            } catch (e) { return false; }
+                return { success: response.ok, reason: response.ok ? 'OK' : `HTTP ${response.status}` };
+            } catch (e) { return { success: false, reason: 'Network Error' }; }
         }
 
         async function verifyJws(jws, publicKeyUrl) {
             try {
                 const parts = jws.split('.');
-                if (parts.length !== 3) return false;
+                if (parts.length !== 3) return { success: false, reason: 'Invalid JWS format' };
 
                 const response = await fetch(publicKeyUrl, { mode: 'cors' });
-                if (!response.ok) return false;
+                if (!response.ok) return { success: false, reason: `Could not fetch public key (HTTP ${response.status})` };
                 const issuerProfile = await response.json();
                 const publicKeyJwk = issuerProfile.publicKey;
-                if(!publicKeyJwk) return false;
+                if(!publicKeyJwk) return { success: false, reason: 'Public key not found in issuer profile' };
                 
                 const publicKey = await window.crypto.subtle.importKey("jwk", publicKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
                 
                 const dataToVerify = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
                 const signature = new Uint8Array(atob(parts[2].replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
                 
-                return await window.crypto.subtle.verify({ name: "ECDSA", hash: { name: "SHA-256" } }, publicKey, signature, dataToVerify);
+                const isValid = await window.crypto.subtle.verify({ name: "ECDSA", hash: { name: "SHA-256" } }, publicKey, signature, dataToVerify);
+                return { success: isValid, reason: isValid ? 'OK' : 'Signature mismatch' };
             } catch (e) {
                 console.error("JWS Verification failed:", e);
-                return false;
+                return { success: false, reason: e.message };
             }
         }
 
