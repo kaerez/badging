@@ -162,7 +162,23 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
     <template id="verifier-template">
          <section>
             <h2>Badge Verifier</h2>
+            <p>Verification is performed offline. For richer details, you may optionally provide the Issuer and BadgeClass JSON files.</p>
+            <label for="verifyFile">Upload Badge Image (PNG):</label>
             <input type="file" id="verifyFile" accept=".png">
+            <details>
+                <summary>Issuer JSON (Optional)</summary>
+                <label for="verifyIssuerFile">Upload Issuer JSON file:</label>
+                <input type="file" id="verifyIssuerFile" accept=".json">
+                <label for="verifyIssuerText">Or paste Issuer JSON here:</label>
+                <textarea id="verifyIssuerText" rows="3"></textarea>
+            </details>
+             <details>
+                <summary>BadgeClass JSON (Optional)</summary>
+                <label for="verifyBadgeFile">Upload BadgeClass JSON file:</label>
+                <input type="file" id="verifyBadgeFile" accept=".json">
+                <label for="verifyBadgeText">Or paste BadgeClass JSON here:</label>
+                <textarea id="verifyBadgeText" rows="3"></textarea>
+            </details>
             <div id="verify-error" class="error-message hidden"></div>
             <div id="verify-summary" class="hidden">
                 <h3>Badge Summary</h3>
@@ -274,8 +290,8 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
         function createNewConfig() {
             const defaultConfig = {
-                issuer: { id: "", name: "", url: "", email: "", description: "" },
-                badges: [{ alias: "", id: "", name: "", description: "", criteria: "", image_base_64: "", tags: "" }]
+                issuer: { name: "", email: "", description: "" },
+                badges: [{ alias: "", name: "", description: "", criteria: "", image_base_64: "", tags: "" }]
             };
             processConfig(JSON.stringify(defaultConfig));
         }
@@ -334,7 +350,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         }
 
         function populateManagerForm(data) {
-            const definedIssuerKeys = ['id', 'name', 'url', 'email', 'description', 'image_base_64', 'publicKey', 'privateKey'];
+            const definedIssuerKeys = ['name', 'email', 'description', 'image_base_64', 'publicKey', 'privateKey'];
             const standardIssuerFields = {};
             const customIssuerFields = (data.issuer.customFields || {});
             for (const key in data.issuer) {
@@ -366,7 +382,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const badgesContainer = document.getElementById('badges-container');
             const badgeIndex = index === -1 ? badgesContainer.children.length : index;
             
-            const definedBadgeKeys = ['alias', 'id', 'name', 'description', 'criteria', 'image_base_64', 'tags'];
+            const definedBadgeKeys = ['alias', 'name', 'description', 'criteria', 'image_base_64', 'tags'];
             const standardBadgeFields = {};
             const customBadgeFields = (badgeData.customFields || {});
             for (const key in badgeData) {
@@ -400,7 +416,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
         function addCustomFieldInput(targetId, prefix, key = '', value = '', type = 'global') {
             const container = document.getElementById(targetId);
-            const fieldIndex = Date.now(); // Use timestamp for a more unique ID
+            const fieldIndex = Date.now() + Math.random();
             const div = document.createElement('div');
             div.className = 'custom-field';
 
@@ -423,14 +439,13 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
         function createFormFields(data, prefix) {
             const fields = {
-                issuer: { id: {r:true}, name: {r:true}, url: {r:true}, email: {r:false}, description: {r:false, t:'textarea'}, image_base_64: {r:false, t:'image'}, publicKey: {r:false, t:'textarea', h:"Optional. JWK for signing."}, privateKey: {r:false, t:'textarea', p:true, h:"Secret JWK for signing."} },
-                badge: { alias: {r:true}, id: {r:true}, name: {r:true}, description: {r:true}, criteria: {r:true, t:'textarea'}, image_base_64: {r:true, t:'image'}, tags: {r:false, h:"Comma-separated"} }
+                issuer: { name: {r:true}, email: {r:false}, description: {r:false, t:'textarea'}, image_base_64: {r:false, t:'image'}, publicKey: {r:false, t:'textarea', h:"Optional. JWK for signing."}, privateKey: {r:false, t:'textarea', p:true, h:"Secret JWK for signing."} },
+                badge: { alias: {r:true}, name: {r:true}, description: {r:true}, criteria: {r:true, t:'textarea'}, image_base_64: {r:true, t:'image'}, tags: {r:false, h:"Comma-separated"} }
             };
             const fieldType = prefix.startsWith('badge') ? 'badge' : 'issuer';
             
             let html = Object.entries(fields[fieldType]).map(([key, opts]) => {
                 const value = (data && data[key]) ? data[key] : '';
-                const title = opts.h || `A comma-separated list of keywords.`;
                 let inputElement;
                 if (opts.t === 'image') {
                     const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
@@ -462,7 +477,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         
         function handleImageUpload(event, previewId, textareaId) {
             const file = event.target.files[0];
-            if (!file || !file.type.startsWith('image/')) return;
+            if (!file) return;
             const reader = new FileReader();
             reader.onload = (e) => {
                 document.getElementById(previewId).src = e.target.result;
@@ -564,7 +579,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 filename = 'issuer.json';
             } else if (type === 'badge' && data.badges[index]) {
                 const { alias, customFields, ...badge } = data.badges[index];
-                objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "BadgeClass", ...badge, criteria: { narrative: badge.criteria }, issuer: data.issuer.id };
+                objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "BadgeClass", ...badge, criteria: { narrative: badge.criteria } };
                 delete objectToShow.image_base_64;
                 objectToShow.image = badge.image_base_64;
                 if (badge.tags) objectToShow.tags = badge.tags.split(',').map(t => t.trim());
@@ -573,6 +588,11 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                         if (customFields[key].type === 'global') objectToShow[key] = customFields[key].value;
                     }
                 }
+                const issuerProfile = { "@context": "https://w3id.org/openbadges/v2", type: "Profile", name: data.issuer.name };
+                objectToShow.issuer = {
+                    "id": `data:application/json;base64,${btoa(JSON.stringify(issuerProfile))}`,
+                    ...issuerProfile
+                };
                 filename = `badgeclass-${alias || 'badge'}.json`;
             }
             
@@ -723,6 +743,8 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 document.getElementById('expires-date').classList.toggle('hidden', e.target.value === 'no');
             }));
             document.getElementById('verifyFile').addEventListener('change', handleVerifyFile);
+            document.getElementById('verifyIssuerFile').addEventListener('change', (e) => handleJsonFileUpload(e, 'verifyIssuerText'));
+            document.getElementById('verifyBadgeFile').addEventListener('change', (e) => handleJsonFileUpload(e, 'verifyBadgeText'));
             document.getElementById('verify-recipient-btn').addEventListener('click', handleVerifyRecipient);
             document.getElementById('toggle-json-btn').addEventListener('click', () => {
                 document.getElementById('verify-output').classList.toggle('hidden');
@@ -730,6 +752,16 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             document.getElementById('issued-date').valueAsDate = new Date();
         }
         
+        function handleJsonFileUpload(event, textareaId) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById(textareaId).value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
         async function handleBake(event) {
             event.preventDefault();
             const bakerError = document.getElementById('baker-error');
@@ -753,7 +785,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const bakeTimeCustomFields = {};
             document.querySelectorAll('#dynamic-bake-fields .dynamic-bake-field').forEach(field => {
                 const input = field.querySelector('input[type="text"]');
-                if (input.value) { // Only include if value is not empty
+                if (input.value) {
                     bakeTimeCustomFields[input.dataset.key] = input.value;
                 }
             });
@@ -803,30 +835,40 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const recipientIdentity = await hashRecipient(email);
             const issuerData = extractDataFromForm().issuer;
             
-            const { privateKey, ...publicIssuerData } = issuerData;
+            const { privateKey, publicKey, customFields: issuerCustomFields, ...publicIssuerData } = issuerData;
+            const { alias, customFields: badgeCustomFields, ...badgeProps } = badge;
             
-            const { alias, customFields, ...badgeProps } = badge;
+            const issuerProfile = {
+                "@context": "https://w3id.org/openbadges/v2",
+                type: "Profile",
+                ...publicIssuerData
+            };
+            if (issuerCustomFields) {
+                for (const key in issuerCustomFields) {
+                    if (issuerCustomFields[key].type === 'global') issuerProfile[key] = issuerCustomFields[key].value;
+                }
+            }
+            const issuerId = `data:application/json;base64,${btoa(JSON.stringify(issuerProfile))}`;
+            issuerProfile.id = issuerId;
+            
             let badgeClass = {
                 ...badgeProps,
                 type: "BadgeClass",
-                criteria: { narrative: badge.criteria },
+                name: badge.name,
+                description: badge.description,
                 image: badge.image_base_64,
-                issuer: verificationType === 'signed' ? publicIssuerData.id : publicIssuerData
+                criteria: { narrative: badge.criteria },
+                issuer: verificationType === 'signed' ? issuerId : issuerProfile
             };
             delete badgeClass.image_base_64;
-            if(badgeClass.issuer.publicKey) delete badgeClass.issuer.publicKey;
             if (badge.tags) badgeClass.tags = badge.tags.split(',').map(t => t.trim());
-            
-            if (issuerData.customFields) {
-                for (const key in issuerData.customFields) {
-                    if (issuerData.customFields[key].type === 'global') badgeClass.issuer[key] = issuerData.customFields[key].value;
+            if (badgeCustomFields) {
+                for (const key in badgeCustomFields) {
+                    if (badgeCustomFields[key].type === 'global') badgeClass[key] = badgeCustomFields[key].value;
                 }
             }
-            if (badge.customFields) {
-                for (const key in badge.customFields) {
-                    if (badge.customFields[key].type === 'global') badgeClass[key] = badge.customFields[key].value;
-                }
-            }
+            const badgeClassId = `data:application/json;base64,${btoa(JSON.stringify(badgeClass))}`;
+            badgeClass.id = badgeClassId;
 
             let assertion = {
                 "@context": "https://w3id.org/openbadges/v2",
@@ -841,13 +883,15 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             if (evidence) assertion.evidence = { id: evidence };
             
             if (verificationType === 'hosted') {
-                assertion.id = `urn:uuid:${generateUUID()}`;
-                assertion.verification = { type: "hosted" };
+                const assertionString = JSON.stringify(assertion);
+                const base64Assertion = btoa(unescape(encodeURIComponent(assertionString)));
+                assertion.id = `data:application/json;base64,${base64Assertion}`;
+                assertion.verification = { type: "HostedBadge" };
                 return assertion;
             } else { // signed
-                const privateKeyJwk = JSON.parse(issuerData.privateKey);
+                const privateKeyJwk = JSON.parse(privateKey);
                 const privateKeyForSigning = await window.crypto.subtle.importKey("jwk", privateKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
-                assertion.verification = { type: "SignedBadge", creator: issuerData.id };
+                assertion.verification = { type: "SignedBadge", creator: issuerId };
                 return createJws(assertion, privateKeyForSigning);
             }
         }
@@ -872,7 +916,11 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                     const result = extractBadgeData(pngBytes);
                     if (result && result.assertion) {
                         currentAssertionData = result.assertion;
-                        await displayVerificationSummary(result.assertion, result.isSigned, result.jws);
+                        
+                        const issuerJsonText = document.getElementById('verifyIssuerText').value;
+                        const badgeJsonText = document.getElementById('verifyBadgeText').value;
+                        
+                        await displayVerificationSummary(result.assertion, result.isSigned, result.jws, issuerJsonText, badgeJsonText);
                         verifyOutput.textContent = JSON.stringify(result.assertion, null, 2);
                         verifySummary.classList.remove('hidden');
                     } else {
@@ -886,17 +934,29 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             reader.readAsArrayBuffer(file);
         }
         
-        async function displayVerificationSummary(assertion, isSigned, jws) {
+        async function displayVerificationSummary(assertion, isSigned, jws, issuerJsonText, badgeJsonText) {
+            let manualIssuer = null, manualBadge = null;
+            try { if(issuerJsonText) manualIssuer = JSON.parse(issuerJsonText); } catch(e) { displayError(document.getElementById('verify-error'), "Invalid Issuer JSON provided."); }
+            try { if(badgeJsonText) manualBadge = JSON.parse(badgeJsonText); } catch(e) { displayError(document.getElementById('verify-error'), "Invalid BadgeClass JSON provided."); }
+
+            const finalAssertion = {
+                ...assertion,
+                badge: manualBadge || assertion.badge,
+            };
+            if (typeof finalAssertion.badge.issuer === 'string' && manualIssuer) {
+                finalAssertion.badge.issuer = manualIssuer;
+            }
+
             const fieldMap = {
-                badge: { label: 'Badge Details', fields: { 'name': 'Name', 'description': 'Description', 'image_base_64': 'Image', 'criteria.narrative': 'Criteria' } },
-                issuer: { label: 'Issuer Details', fields: { 'name': 'Name', 'url': 'URL', 'id': 'Profile URL', 'image_base_64': 'Logo' } },
+                badge: { label: 'Badge Details', fields: { 'name': 'Name', 'description': 'Description', 'image': 'Image', 'criteria.narrative': 'Criteria' } },
+                issuer: { label: 'Issuer Details', fields: { 'name': 'Name', 'url': 'URL', 'id': 'Profile URL', 'image': 'Logo' } },
                 recipient: { label: 'Recipient', fields: { 'identity': 'Identity', 'hashed': 'Hashed', 'salt': 'Salt', 'type': 'Type' } },
                 assertion: { label: 'Assertion Details', fields: { 'issuedOn': 'Issued On', 'expires': 'Expires', 'id': 'ID', 'evidence.id': 'Evidence' } }
             };
 
             let tableHTML = `<table class="summary-table">`;
             for (const section in fieldMap) {
-                const sourceObject = section === 'assertion' ? assertion : getNested(assertion, section);
+                const sourceObject = section === 'assertion' ? finalAssertion : getNested(finalAssertion, section);
                 if (!sourceObject) continue;
                 
                 tableHTML += `<tr><th colspan="2"><h4>${fieldMap[section].label}</h4></th></tr>`;
@@ -917,14 +977,12 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 }
             }
             
-            let verificationStatus = { hosted: '⚪ Not Checked', signature: '⚪ Not Applicable' };
+            let verificationStatus = { signature: '⚪ Not Applicable' };
             if (isSigned) {
-                verificationStatus.hosted = '⚪ Not Applicable';
                 verificationStatus.signature = '⌛ Verifying...';
             }
             
             tableHTML += `<tr><th colspan="2"><h4>Verification Status</h4></th></tr>`;
-            tableHTML += `<tr><th>Hosted Status</th><td id="status-hosted">${verificationStatus.hosted}</td></tr>`;
             tableHTML += `<tr><th>Signature Status</th><td id="status-signature">${verificationStatus.signature}</td></tr>`;
             tableHTML += `</table>`;
             
@@ -938,27 +996,12 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             document.getElementById('recipient-verification-section').classList.remove('hidden');
 
             if (isSigned) {
-                const creatorUrl = getNested(assertion, 'verification.creator');
-                if(creatorUrl) {
-                    const verifyResult = await verifyJws(jws, creatorUrl);
+                const publicKeyJwk = manualIssuer ? manualIssuer.publicKey : null;
+                if(publicKeyJwk) {
+                    const verifyResult = await verifyJws(jws, publicKeyJwk);
                     document.getElementById('status-signature').textContent = verifyResult.success ? '✅ Verified' : `❌ Invalid Signature (${verifyResult.reason})`;
                 } else {
-                    document.getElementById('status-signature').textContent = '⚠️ No public key URL found in badge for verification.';
-                }
-            } else {
-                let issuerId = '';
-                const issuer = getNested(assertion, 'badge.issuer');
-                if (typeof issuer === 'string') {
-                    issuerId = issuer;
-                } else if (typeof issuer === 'object' && issuer !== null) {
-                    issuerId = issuer.id;
-                }
-                
-                if(issuerId) {
-                    const verifyResult = await verifyUrl(issuerId);
-                    document.getElementById('status-hosted').textContent = verifyResult.success ? '✅ Verified' : `❌ Host Check Failed (${verifyResult.reason})`;
-                } else {
-                    document.getElementById('status-hosted').textContent = '⚠️ No issuer URL found';
+                    document.getElementById('status-signature').textContent = '⚠️ Public Key not provided. Unable to verify signature.';
                 }
             }
         }
@@ -977,29 +1020,12 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             modal.querySelector('#image-close-btn').onclick = () => modal.classList.add('hidden');
             modal.classList.remove('hidden');
         }
-
-        async function verifyUrl(url) {
-            const proxyUrl = 'http://localhost:8080/' + url;
-            try {
-                const response = await fetch(proxyUrl);
-                return { success: response.ok, reason: response.ok ? 'OK' : `HTTP ${response.status}` };
-            } catch (e) {
-                return { success: false, reason: 'Network Error' };
-            }
-        }
-
-        async function verifyJws(jws, publicKeyUrl) {
-            const proxyUrl = 'http://localhost:8080/' + publicKeyUrl;
+        
+        async function verifyJws(jws, publicKeyJwk) {
             try {
                 const parts = jws.split('.');
                 if (parts.length !== 3) return { success: false, reason: 'Invalid JWS format' };
-
-                const response = await fetch(proxyUrl);
-                if (!response.ok) return { success: false, reason: `Could not fetch public key (HTTP ${response.status})` };
-                
-                const issuerProfile = await response.json();
-                const publicKeyJwk = issuerProfile.publicKey;
-                if (!publicKeyJwk) return { success: false, reason: 'Public key not found in issuer profile' };
+                if (!publicKeyJwk) return { success: false, reason: 'Public key not provided' };
                 
                 const publicKey = await window.crypto.subtle.importKey("jwk", publicKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
                 
@@ -1074,9 +1100,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                         if (keyword === 'openbadges') {
                             let dataOffset = nullIndex + 1;
                             if (type === 'iTXt') { 
-                                if (chunkData[dataOffset] === 0 && chunkData[dataOffset+1] === 0) { // No compression, no language tag
+                                if (chunkData[dataOffset] === 0 && chunkData[dataOffset+1] === 0) {
                                     dataOffset += 4;
-                                } else { // Fallback for safety
+                                } else { 
                                     dataOffset += 2; while (dataOffset < chunkData.length && chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; while (dataOffset < chunkData.length && chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; 
                                 }
                             }
@@ -1113,7 +1139,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const encoder = new TextEncoder();
             const keywordBytes = encoder.encode(keyword); const textBytes = encoder.encode(text);
 
-            // FIX: Using iTXt chunk for better compatibility
             const iTXtChunkData = new Uint8Array(keywordBytes.length + 5 + textBytes.length);
             let i = 0;
             iTXtChunkData.set(keywordBytes, i); i+= keywordBytes.length;
