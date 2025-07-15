@@ -5,14 +5,14 @@ Copyright (C) 2025 KSEC - Erez Kalman. All Rights Reserved.
 SPDX-License-Identifier: (AGPL-3.0-or-later OR LicenseRef-Erez_Kalman_KSEC-Commercial)
 
 This source code is licensed under a dual-license model.
-See the LICENSE, LICENSE.AGPL.md, and NOTICE.md files for full details.
+See the LICENSE, LICENSE.AGPL.md files for full details.
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="favicon.ico" sizes="32x32">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Badge Management Suite</title>
+    <link rel="icon" href="favicon.ico" sizes="32x32">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
     <style>
         :root { --primary-color: #007bff; --primary-hover: #0056b3; --border-color: #dee2e6; --danger-color: #dc3545; }
@@ -281,7 +281,7 @@ See the LICENSE, LICENSE.AGPL.md, and NOTICE.md files for full details.
             document.getElementById('issuer-publicKey').after(createKeyGenButton());
             document.getElementById('generate-key-btn').addEventListener('click', generateKeyPair);
             document.getElementById('toggle-pk-visibility').addEventListener('click', togglePrivateKeyVisibility);
-            document.getElementById('issuer-image-upload').addEventListener('change', (e) => handleImageUpload(e, 'issuer-image-preview', 'issuer-image_base_64'));
+            document.getElementById('issuer-image_base_64-upload').addEventListener('change', (e) => handleImageUpload(e, 'issuer-image_base_64-preview', 'issuer-image_base_64'));
 
             const badgesContainer = document.getElementById('badges-container');
             badgesContainer.innerHTML = '';
@@ -303,7 +303,7 @@ See the LICENSE, LICENSE.AGPL.md, and NOTICE.md files for full details.
             badgesContainer.appendChild(entryDiv);
             entryDiv.querySelector('.remove-badge-btn').addEventListener('click', () => entryDiv.remove());
             entryDiv.querySelector('.generate-badge-json-btn').addEventListener('click', () => generateSingleJson('badge', badgeIndex));
-            entryDiv.querySelector(`#badge-${badgeIndex}-image-upload`).addEventListener('change', (e) => handleImageUpload(e, `badge-${badgeIndex}-image-preview`, `badge-${badgeIndex}-image_base_64`));
+            entryDiv.querySelector(`#badge-${badgeIndex}-image_base_64-upload`).addEventListener('change', (e) => handleImageUpload(e, `badge-${badgeIndex}-image_base_64-preview`, `badge-${badgeIndex}-image_base_64`));
         }
 
         function createFormFields(data, prefix) {
@@ -350,8 +350,504 @@ See the LICENSE, LICENSE.AGPL.md, and NOTICE.md files for full details.
             reader.readAsDataURL(file);
         }
 
-        // ... (All other functions from previous version, fully implemented)
+        function createKeyGenButton() {
+            const btn = document.createElement('button');
+            btn.type = 'button'; btn.id = 'generate-key-btn';
+            btn.textContent = 'Generate New Key Pair'; btn.className = 'secondary';
+            return btn;
+        }
+
+        function togglePrivateKeyVisibility() {
+            const pkInput = document.getElementById('issuer-privateKey');
+            pkInput.type = pkInput.type === 'password' ? 'text' : 'password';
+        }
+
+        async function generateKeyPair() {
+            try {
+                const keyPair = await window.crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+                const publicKeyJwk = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+                const privateKeyJwk = await window.crypto.subtle.exportKey("jwk", keyPair.privateKey);
+                document.getElementById('issuer-publicKey').value = JSON.stringify(publicKeyJwk, null, 2);
+                document.getElementById('issuer-privateKey').value = JSON.stringify(privateKeyJwk, null, 2);
+                alert("New key pair generated and populated in the form.");
+            } catch (e) {
+                alert(`Key generation failed: ${e.message}`);
+            }
+        }
+
+        function extractDataFromForm() {
+            const newConfig = { issuer: {}, badges: [] };
+            document.querySelectorAll('#issuer-fields .form-field').forEach(input => {
+                if(input.value) newConfig.issuer[input.id.split('-')[1]] = input.value;
+            });
+            document.querySelectorAll('#badges-container .badge-entry').forEach(entry => {
+                const badge = {};
+                entry.querySelectorAll('.form-field').forEach(input => {
+                    if(input.value) badge[input.id.split('-')[2]] = input.value;
+                });
+                newConfig.badges.push(badge);
+            });
+            return newConfig;
+        }
         
+        function handleExportPlain() {
+            const dataToExport = extractDataFromForm();
+            delete dataToExport.issuer.privateKey;
+            triggerDownload(new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' }), 'config.json');
+        }
+
+        async function handleExportEncrypted() {
+            const password = await promptForPassword('Create Encryption Password', true, true);
+            if (!password) return;
+            const dataToExport = extractDataFromForm();
+            const iterations = parseInt(document.getElementById('kdf-iterations').value, 10);
+            const encryptedFile = await encryptData(JSON.stringify(dataToExport), password, iterations);
+            triggerDownload(new Blob([JSON.stringify(encryptedFile)], { type: 'application/json' }), 'config.encrypted.json');
+        }
+
+        function generateSingleJson(type, index) {
+            const data = extractDataFromForm();
+            let objectToShow = {};
+            if (type === 'issuer') {
+                const { privateKey, ...issuerData } = data.issuer;
+                objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "Profile", ...issuerData };
+                if (objectToShow.publicKey) { try { objectToShow.publicKey = JSON.parse(objectToShow.publicKey); } catch(e){} }
+            } else if (type === 'badge' && data.badges[index]) {
+                const badge = data.badges[index];
+                objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "BadgeClass", id: badge.id, name: badge.name, description: badge.description, image: badge.image_base_64, criteria: { narrative: badge.criteria }, issuer: data.issuer.id };
+                if (badge.tags) objectToShow.tags = badge.tags.split(',').map(t => t.trim());
+            }
+            alert("Generated JSON:\n\n" + JSON.stringify(objectToShow, null, 2));
+        }
+        
+        function clearSession() {
+            if (confirm("Are you sure? This will clear all data and lock the application.")) {
+                window.location.reload();
+            }
+        }
+
+        function promptForPassword(title, needsConfirmation = false, isEncrypting = false) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('password-modal');
+                modal.innerHTML = document.getElementById('password-modal-template').innerHTML;
+                const modalTitle = document.getElementById('modal-title');
+                const modalWarning = document.getElementById('modal-warning');
+                const modalError = document.getElementById('modal-error');
+                const modalPassword = document.getElementById('modal-password');
+                const modalConfirmPassword = document.getElementById('modal-confirm-password');
+                const modalSubmit = document.getElementById('modal-submit');
+                const modalCancel = document.getElementById('modal-cancel');
+
+                modalTitle.textContent = title;
+                modalConfirmPassword.classList.toggle('hidden', !needsConfirmation);
+                if (isEncrypting) {
+                    modalWarning.textContent = "Warning: Use a strong, unique password. If you lose it, your encrypted file will be unrecoverable.";
+                    modalWarning.classList.remove('hidden');
+                }
+                modal.classList.remove('hidden');
+
+                modalSubmit.onclick = () => {
+                    const pass = modalPassword.value;
+                    const confirmPass = modalConfirmPassword.value;
+                    if (needsConfirmation && pass !== confirmPass) { displayError(modalError, "Passwords do not match."); return; }
+                    if (!pass) { displayError(modalError, "Password cannot be empty."); return; }
+                    modal.classList.add('hidden');
+                    resolve(pass);
+                };
+                modalCancel.onclick = () => { modal.classList.add('hidden'); resolve(null); };
+            });
+        }
+        
+        async function encryptData(text, password, iterations) {
+            const salt = window.crypto.getRandomValues(new Uint8Array(16));
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKey(password, salt, iterations);
+            const encryptedContent = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(text));
+            const now = new Date().toISOString();
+            return {
+                metadata: { createdAt: now, updatedAt: now, kdf: "PBKDF2", iterations: iterations },
+                encryptedData: { iv: Array.from(iv), salt: Array.from(salt), ciphertext: Array.from(new Uint8Array(encryptedContent)) }
+            };
+        }
+
+        async function decryptData(fileData, password) {
+            const { iv, salt, ciphertext } = fileData.encryptedData;
+            const iterations = fileData.metadata.iterations;
+            const key = await deriveKey(password, new Uint8Array(salt), iterations);
+            const decryptedContent = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(iv) }, key, new Uint8Array(ciphertext));
+            return new TextDecoder().decode(decryptedContent);
+        }
+
+        async function deriveKey(password, salt, iterations) {
+            const keyMaterial = await window.crypto.subtle.importKey('raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveKey']);
+            return window.crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: iterations, hash: 'SHA-256' }, keyMaterial, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        }
+        
+        function triggerDownload(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+        }
+
+        function attachDynamicListeners() {
+            document.getElementById('baker-form').addEventListener('submit', handleBake);
+            document.querySelectorAll('input[name="expiration"]').forEach(radio => radio.addEventListener('change', (e) => {
+                document.getElementById('expires-date').classList.toggle('hidden', e.target.value === 'no');
+            }));
+            document.getElementById('verifyFile').addEventListener('change', handleVerifyFile);
+            document.getElementById('verify-recipient-btn').addEventListener('click', handleVerifyRecipient);
+            document.getElementById('toggle-json-btn').addEventListener('click', () => {
+                document.getElementById('verify-output').classList.toggle('hidden');
+            });
+            document.getElementById('issued-date').valueAsDate = new Date();
+        }
+        
+        async function handleBake(event) {
+            event.preventDefault();
+            const bakerError = document.getElementById('baker-error');
+            const resultSection = document.getElementById('result-section');
+            bakerError.classList.add('hidden');
+            resultSection.classList.add('hidden');
+
+            const badgeAlias = document.getElementById('badge-select').value;
+            const recipientEmail = document.getElementById('recipient-email').value;
+            const evidenceUrl = document.getElementById('evidence-url').value;
+            const issuedDate = document.getElementById('issued-date').value;
+            const expiresOption = document.querySelector('input[name="expiration"]:checked').value;
+            const expiresDate = expiresOption === 'yes' ? document.getElementById('expires-date').value : null;
+            const verificationType = document.querySelector('input[name="verification"]:checked').value;
+
+            const issuerData = extractDataFromForm().issuer;
+            if (verificationType === 'signed' && !issuerData.privateKey) {
+                displayError(bakerError, 'A private key must be provided in Issuer Management to create a signed badge.');
+                return;
+            }
+
+            try {
+                const badgeData = config.badges.find(b => b.alias === badgeAlias);
+                const assertion = await buildAssertion(badgeData, recipientEmail, issuedDate, expiresDate, evidenceUrl, verificationType);
+                const isSigned = verificationType === 'signed';
+                const bakedPngDataUri = await bakePng(badgeData.image_base_64, assertion, isSigned);
+                
+                document.getElementById('json-output').textContent = isSigned ? assertion : JSON.stringify(assertion, null, 2);
+                document.getElementById('preview-img').src = bakedPngDataUri;
+                const downloadLink = document.getElementById('download-link');
+                downloadLink.href = bakedPngDataUri;
+                downloadLink.download = `${badgeAlias}-${recipientEmail.split('@')[0]}.png`;
+                resultSection.classList.remove('hidden');
+            } catch (error) {
+                displayError(bakerError, `Could not bake badge: ${error.message}`);
+            }
+        }
+
+        async function createJws(payload, privateKeyObj) {
+            const header = { alg: "ES256", typ: "JWT" };
+            const toBase64Url = (data) => btoa(data).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+            const encodedHeader = toBase64Url(JSON.stringify(header));
+            const encodedPayload = toBase64Url(JSON.stringify(payload));
+            const dataToSign = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
+            const signature = await window.crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, privateKeyObj, dataToSign);
+            const encodedSignature = toBase64Url(String.fromCharCode(...new Uint8Array(signature)));
+            return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
+        }
+        
+        async function buildAssertion(badge, email, issuedOn, expires, evidence, verificationType) {
+            const recipientIdentity = await hashRecipient(email);
+            const issuerData = extractDataFromForm().issuer;
+            
+            let badgeClass = {
+                type: "BadgeClass", id: badge.id, name: badge.name,
+                description: badge.description, image: badge.image_base_64,
+                criteria: { narrative: badge.criteria },
+                issuer: verificationType === 'signed' ? issuerData.id : { ...issuerData }
+            };
+            if(badgeClass.issuer.privateKey) delete badgeClass.issuer.privateKey;
+            if (badge.tags) badgeClass.tags = badge.tags.split(',').map(t => t.trim());
+            Object.keys(badge).forEach(key => {
+                if(!['alias','id','name','description','image_base_64','criteria','tags'].includes(key)) {
+                    badgeClass[key] = badge[key];
+                }
+            });
+
+
+            let assertion = {
+                "@context": "https://w3id.org/openbadges/v2",
+                type: "Assertion",
+                recipient: recipientIdentity,
+                badge: badgeClass,
+                issuedOn: new Date(`${issuedOn}T00:00:00Z`).toISOString(),
+            };
+            
+            if (expires) assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
+            if (evidence) assertion.evidence = { id: evidence };
+            
+            if (verificationType === 'hosted') {
+                assertion.id = `urn:uuid:${generateUUID()}`;
+                assertion.verification = { type: "hosted" };
+                return assertion;
+            } else { // signed
+                const privateKeyJwk = JSON.parse(issuerData.privateKey);
+                const privateKeyForSigning = await window.crypto.subtle.importKey("jwk", privateKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+                assertion.verification = { type: "SignedBadge", creator: issuerData.id };
+                return createJws(assertion, privateKeyForSigning);
+            }
+        }
+
+        async function handleVerifyFile(event) {
+            const file = event.target.files[0];
+            if (!file || file.type !== 'image/png') {
+                displayError(document.getElementById('verify-error'), "Invalid file type. Please upload a PNG image.");
+                return;
+            }
+
+            const verifyError = document.getElementById('verify-error');
+            const verifySummary = document.getElementById('verify-summary');
+            const verifyOutput = document.getElementById('verify-output');
+            verifyError.classList.add('hidden');
+            verifySummary.classList.add('hidden');
+            verifyOutput.classList.add('hidden');
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const pngBytes = new Uint8Array(e.target.result);
+                    const result = extractBadgeData(pngBytes);
+                    if (result && result.assertion) {
+                        currentAssertionData = result.assertion;
+                        await displayVerificationSummary(result.assertion, result.isSigned, result.jws);
+                        verifyOutput.textContent = JSON.stringify(result.assertion, null, 2);
+                        verifySummary.classList.remove('hidden');
+                    } else {
+                        verifyOutput.textContent = 'No valid Open Badge metadata found.';
+                        verifyOutput.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    displayError(verifyError, `Error reading badge: ${error.message}`);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        
+        async function displayVerificationSummary(assertion, isSigned, jws) {
+            let verificationStatus = { hosted: '⚪ Not Checked', signature: '⚪ Not Applicable' };
+            if (isSigned) {
+                verificationStatus.hosted = '⚪ Not Applicable';
+                verificationStatus.signature = '⌛ Verifying...';
+            }
+            
+            const renderTable = (status) => {
+                let tableHTML = `<table class="summary-table">`;
+                const flattened = flattenObject(assertion);
+                for(const key in flattened) {
+                    tableHTML += `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(flattened[key].toString())}</td></tr>`;
+                }
+
+                tableHTML += `
+                    <tr><th>Hosted Status</th><td>${status.hosted}</td></tr>
+                    <tr><th>Signature Status</th><td>${status.signature}</td></tr>
+                </table>`;
+                document.getElementById('verify-summary-table').innerHTML = tableHTML;
+                document.getElementById('recipient-verification-section').classList.remove('hidden');
+            };
+
+            renderTable(verificationStatus);
+
+            if (isSigned) {
+                const creatorUrl = assertion.verification?.creator;
+                if(creatorUrl) {
+                    const isValid = await verifyJws(jws, creatorUrl);
+                    verificationStatus.signature = isValid ? '✅ Verified' : '❌ Invalid Signature';
+                } else {
+                    verificationStatus.signature = '⚠️ No public key URL found in badge for verification.';
+                }
+            } else {
+                const issuerUrl = assertion.badge?.issuer?.id;
+                if(issuerUrl) {
+                    verificationStatus.hosted = await verifyUrl(issuerUrl) ? '✅ Verified' : '❌ Host Check Failed';
+                } else {
+                    verificationStatus.hosted = '⚠️ No issuer URL found';
+                }
+            }
+            renderTable(verificationStatus);
+        }
+        
+        function flattenObject(obj, parentKey = '', res = {}) {
+            for(let key in obj){
+                if(obj.hasOwnProperty(key)){
+                    let propName = parentKey ? parentKey + '.' + key : key;
+                    if(typeof obj[key] == 'object' && obj[key] !== null && !Array.isArray(obj[key])){
+                        flattenObject(obj[key], propName, res);
+                    } else {
+                        res[propName] = obj[key];
+                    }
+                }
+            }
+            return res;
+        }
+
+        async function verifyUrl(url) {
+            try {
+                const response = await fetch(url, { mode: 'cors' });
+                return response.ok;
+            } catch (e) { return false; }
+        }
+
+        async function verifyJws(jws, publicKeyUrl) {
+            try {
+                const parts = jws.split('.');
+                if (parts.length !== 3) return false;
+
+                const response = await fetch(publicKeyUrl, { mode: 'cors' });
+                if (!response.ok) return false;
+                const issuerProfile = await response.json();
+                const publicKeyJwk = issuerProfile.publicKey;
+                if(!publicKeyJwk) return false;
+                
+                const publicKey = await window.crypto.subtle.importKey("jwk", publicKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
+                
+                const dataToVerify = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+                const signature = new Uint8Array(atob(parts[2].replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
+                
+                return await window.crypto.subtle.verify({ name: "ECDSA", hash: { name: "SHA-256" } }, publicKey, signature, dataToVerify);
+            } catch (e) {
+                console.error("JWS Verification failed:", e);
+                return false;
+            }
+        }
+
+        async function handleVerifyRecipient() {
+            if (!currentAssertionData) return;
+            const emailToVerify = document.getElementById('verify-email-input').value;
+            const recipientVerificationResult = document.getElementById('recipient-verification-result');
+            if (!emailToVerify) {
+                recipientVerificationResult.textContent = "Please enter an email to verify.";
+                return;
+            }
+            try {
+                const { salt, identity } = currentAssertionData.recipient;
+                if (!salt || !identity) throw new Error("Recipient data is incomplete.");
+                const expectedHash = identity.split('$')[1] || identity;
+                const newHash = (await hashRecipient(emailToVerify, salt)).identity.split('$')[1];
+                if (newHash === expectedHash) {
+                    recipientVerificationResult.textContent = `✅ Verified for: ${escapeHtml(emailToVerify)}`;
+                    recipientVerificationResult.style.color = 'green';
+                } else {
+                    recipientVerificationResult.textContent = `❌ Verification failed for: ${escapeHtml(emailToVerify)}`;
+                    recipientVerificationResult.style.color = 'red';
+                }
+            } catch (e) {
+                recipientVerificationResult.textContent = `Could not perform verification: ${e.message}`;
+                recipientVerificationResult.style.color = 'red';
+            }
+        }
+        
+        function escapeHtml(text) {
+            if (typeof text !== 'string') return text;
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+        
+        async function hashRecipient(email, salt = `salt-${Date.now()}`) {
+            const identityStr = email + salt;
+            const data = new TextEncoder().encode(identityStr);
+            const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return { type: 'email', hashed: true, salt: salt, identity: `sha256$${hashArray.map(b => b.toString(16).padStart(2, '0')).join('')}` };
+        }
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0; return (c == 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            });
+        }
+        
+        function extractBadgeData(pngBytes) {
+            const decoder = new TextDecoder(); let offset = 8;
+            while (offset < pngBytes.length) {
+                const view = new DataView(pngBytes.buffer);
+                const len = view.getUint32(offset, false);
+                const type = decoder.decode(pngBytes.slice(offset + 4, offset + 8));
+                if ((type === 'tEXt' || type === 'iTXt') && len > 10) {
+                    const chunkData = pngBytes.slice(offset + 8, offset + 8 + len);
+                    const nullIndex = chunkData.indexOf(0);
+                    if (nullIndex > 0) {
+                        const keyword = decoder.decode(chunkData.slice(0, nullIndex));
+                        if (keyword === 'openbadges') {
+                            let dataOffset = nullIndex + 1;
+                            if (type === 'iTXt') { dataOffset += 2; while (chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; while (chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; }
+                            const assertionText = decoder.decode(chunkData.slice(dataOffset));
+                            const isSigned = assertionText.split('.').length === 3 && assertionText.startsWith('ey');
+                            let assertion;
+                            if (isSigned) {
+                                try { assertion = JSON.parse(atob(assertionText.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+                                catch (e) { assertion = { error: "Could not decode JWS payload", jws: assertionText }; }
+                            } else {
+                                assertion = JSON.parse(assertionText);
+                            }
+                            return { assertion, isSigned, jws: isSigned ? assertionText : null };
+                        }
+                    }
+                }
+                if (type === 'IEND') break;
+                offset += 12 + len;
+            }
+            return { assertion: null };
+        }
+
+        async function bakePng(base64Png, assertion, isSigned) {
+            const pngHeader = "data:image/png;base64,";
+            const pngData = atob(base64Png.substring(pngHeader.length));
+            const pngBytes = new Uint8Array(pngData.length);
+            for (let i = 0; i < pngData.length; i++) pngBytes[i] = pngData.charCodeAt(i);
+            
+            const keyword = "openbadges"; 
+            const text = isSigned ? assertion : JSON.stringify(assertion);
+            const encoder = new TextEncoder();
+            const keywordBytes = encoder.encode(keyword); const textBytes = encoder.encode(text);
+            const chunkData = new Uint8Array(keywordBytes.length + 1 + textBytes.length);
+            chunkData.set(keywordBytes, 0); chunkData[keywordBytes.length] = 0;
+            chunkData.set(textBytes, keywordBytes.length + 1);
+            const chunkType = new Uint8Array([116, 69, 88, 116]);
+            const chunkLength = chunkData.length;
+            const fullChunk = new Uint8Array(4 + 4 + chunkLength + 4);
+            const view = new DataView(fullChunk.buffer);
+            view.setUint32(0, chunkLength, false);
+            fullChunk.set(chunkType, 4); fullChunk.set(chunkData, 8);
+            const crcData = new Uint8Array(4 + chunkLength);
+            crcData.set(chunkType, 0); crcData.set(chunkData, 4);
+            view.setUint32(8 + chunkLength, crc32(crcData), false);
+            
+            let iendOffset = -1;
+            for (let i = 8; i < pngBytes.length;) {
+                const len = (new DataView(pngBytes.buffer)).getUint32(i, false);
+                const type = new TextDecoder().decode(pngBytes.slice(i + 4, i + 8));
+                if (type === 'IEND') { iendOffset = i; break; }
+                i += 12 + len;
+            }
+            if (iendOffset === -1) throw new Error("Could not find IEND chunk in PNG.");
+
+            const newPngBytes = new Uint8Array(pngBytes.length + fullChunk.length);
+            newPngBytes.set(pngBytes.slice(0, iendOffset), 0);
+            newPngBytes.set(fullChunk, iendOffset);
+            newPngBytes.set(pngBytes.slice(iendOffset), iendOffset + fullChunk.length);
+            
+            let newPngData = '';
+            for (let i = 0; i < newPngBytes.length; i++) newPngData += String.fromCharCode(newPngBytes[i]);
+            return pngHeader + btoa(newPngData);
+        }
+
+        const crcTable = (() => {
+            const table = new Int32Array(256);
+            for(let n = 0; n < 256; n++) { let c = n; for(let k = 0; k < 8; k++) c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1)); table[n] = c; }
+            return table;
+        })();
+        function crc32(bytes) {
+            let crc = -1;
+            for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
+            return (crc ^ -1) >>> 0;
+        }
     });
     </script>
 </body>
