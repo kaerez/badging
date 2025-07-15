@@ -54,7 +54,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         .image-manager { display: flex; align-items: flex-start; gap: 15px; }
         .image-manager img { max-width: 100px; height: auto; border: 1px solid #ddd; }
         .image-manager .controls { flex-grow: 1; }
-        .custom-field { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .custom-field { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: start; }
+        .custom-field-radios { grid-column: 1 / -1; display: flex; justify-content: flex-start; gap: 15px; font-size: 0.8em; margin-top: -10px; margin-bottom: 5px; }
+        .custom-field-radios label { font-weight: normal; }
         .custom-field input { margin-bottom: 0; }
         .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; text-align: left;}
         .summary-table th, .summary-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
@@ -64,6 +66,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         .summary-table h4 { margin: 10px 0 5px; border: none; }
         footer { text-align: center; margin-top: 30px; color: #6c757d; font-size: 0.9em; }
         .hidden { display: none; }
+        .dynamic-bake-field { display: flex; align-items: center; gap: 10px; }
+        .dynamic-bake-field label { flex-shrink: 0; }
+        .dynamic-bake-field input { flex-grow: 1; }
     </style>
 </head>
 <body>
@@ -92,7 +97,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                     <fieldset>
                         <legend>Issuer Details</legend>
                         <div id="issuer-fields"></div>
-                        <div id="issuer-custom-fields"></div>
+                        <div id="issuer-custom-fields" class="custom-fields-container"></div>
                         <button type="button" class="add-custom-field-btn" data-target="issuer-custom-fields" data-prefix="issuer-custom">Add Custom Field</button>
                         <button type="button" id="generate-issuer-json-btn" class="secondary">Generate Issuer JSON</button>
                     </fieldset>
@@ -128,6 +133,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 <div id="baker-error" class="error-message hidden"></div>
                 <label for="badge-select">Select Badge:</label>
                 <select id="badge-select" required></select>
+                
+                <div id="dynamic-bake-fields"></div>
+
                 <label for="recipient-email">Recipient Email:</label>
                 <input type="email" id="recipient-email" placeholder="jane.doe@example.com" required>
                 <label for="evidence-url">Evidence URL (Optional):</label>
@@ -328,17 +336,16 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         function populateManagerForm(data) {
             const definedIssuerKeys = ['id', 'name', 'url', 'email', 'description', 'image_base_64', 'publicKey', 'privateKey'];
             const standardIssuerFields = {};
-            const customIssuerFields = {};
+            const customIssuerFields = (data.issuer.customFields || {});
             for (const key in data.issuer) {
                 if (definedIssuerKeys.includes(key)) standardIssuerFields[key] = data.issuer[key];
-                else customIssuerFields[key] = data.issuer[key];
             }
             
             document.getElementById('issuer-fields').innerHTML = createFormFields(standardIssuerFields, 'issuer');
             const issuerCustomContainer = document.getElementById('issuer-custom-fields');
             issuerCustomContainer.innerHTML = '';
             for (const key in customIssuerFields) {
-                addCustomFieldInput('issuer-custom-fields', 'issuer-custom', key, customIssuerFields[key]);
+                addCustomFieldInput('issuer-custom-fields', 'issuer-custom', key, customIssuerFields[key].value, customIssuerFields[key].type);
             }
             
             const genKeyBtn = document.getElementById('generate-key-btn');
@@ -361,10 +368,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             
             const definedBadgeKeys = ['alias', 'id', 'name', 'description', 'criteria', 'image_base_64', 'tags'];
             const standardBadgeFields = {};
-            const customBadgeFields = {};
+            const customBadgeFields = (badgeData.customFields || {});
             for (const key in badgeData) {
                 if (definedBadgeKeys.includes(key)) standardBadgeFields[key] = badgeData[key];
-                else customBadgeFields[key] = badgeData[key];
             }
 
             const entryDiv = document.createElement('div');
@@ -382,7 +388,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             
             const badgeCustomContainer = entryDiv.querySelector(`#badge-${badgeIndex}-custom-fields`);
             for (const key in customBadgeFields) {
-                addCustomFieldInput(`badge-${badgeIndex}-custom-fields`, `badge-${badgeIndex}-custom`, key, customBadgeFields[key]);
+                addCustomFieldInput(`badge-${badgeIndex}-custom-fields`, `badge-${badgeIndex}-custom`, key, customBadgeFields[key].value, customBadgeFields[key].type);
             }
             
             entryDiv.querySelector('.add-custom-field-btn').addEventListener('click', (e) => addCustomFieldInput(e.target.dataset.target, e.target.dataset.prefix));
@@ -392,14 +398,23 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             if (badgeImgUpload) badgeImgUpload.addEventListener('change', (e) => handleImageUpload(e, `badge-${badgeIndex}-image_base_64-preview`, `badge-${badgeIndex}-image_base_64`));
         }
 
-        function addCustomFieldInput(targetId, prefix, key = '', value = '') {
+        function addCustomFieldInput(targetId, prefix, key = '', value = '', type = 'global') {
             const container = document.getElementById(targetId);
-            const fieldIndex = container.children.length;
+            const fieldIndex = Date.now(); // Use timestamp for a more unique ID
             const div = document.createElement('div');
             div.className = 'custom-field';
+
+            const radioName = `${prefix}-radios-${fieldIndex}`;
             div.innerHTML = `
-                <input type="text" class="form-field" data-custom-key="${prefix}-${fieldIndex}" placeholder="Field Name (e.g., version)" value="${escapeHtml(key)}">
-                <input type="text" class="form-field" data-custom-value="${prefix}-${fieldIndex}" placeholder="Field Value" value="${escapeHtml(value)}">
+                <div>
+                    <input type="text" class="form-field" data-custom-key="true" placeholder="Field Name (e.g., version)" value="${escapeHtml(key)}">
+                    <input type="text" class="form-field" data-custom-value="true" placeholder="Field Value" value="${escapeHtml(value)}">
+                </div>
+                <div class="custom-field-radios">
+                    <label><input type="radio" name="${radioName}" value="global" ${type === 'global' ? 'checked' : ''}> Global</label>
+                    <label><input type="radio" name="${radioName}" value="baking-optional" ${type === 'baking-optional' ? 'checked' : ''}> Baking - Optional</label>
+                    <label><input type="radio" name="${radioName}" value="baking-required" ${type === 'baking-required' ? 'checked' : ''}> Baking - Required</label>
+                </div>
                 <button type="button" class="danger">X</button>
             `;
             container.appendChild(div);
@@ -475,26 +490,29 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         }
 
         function extractDataFromForm() {
-            const newConfig = { issuer: {}, badges: [] };
+            const newConfig = { issuer: { customFields: {} }, badges: [] };
             
             document.querySelectorAll('#issuer-fields .form-field').forEach(input => {
                 const key = input.id.split('-')[1];
-                if(input.value && !input.dataset.customKey && !input.dataset.customValue) newConfig.issuer[key] = input.value;
+                if(input.value) newConfig.issuer[key] = input.value;
             });
             document.querySelectorAll('#issuer-custom-fields .custom-field').forEach(div => {
                 const keyInput = div.querySelector('[data-custom-key]');
                 const valueInput = div.querySelector('[data-custom-value]');
-                if (keyInput && valueInput && keyInput.value) {
-                    newConfig.issuer[keyInput.value] = valueInput.value;
+                const typeInput = div.querySelector('input[type="radio"]:checked');
+                if (keyInput && valueInput && typeInput && keyInput.value) {
+                    newConfig.issuer.customFields[keyInput.value] = {
+                        type: typeInput.value,
+                        value: valueInput.value
+                    };
                 }
             });
 
             document.querySelectorAll('#badges-container .badge-entry').forEach(entry => {
-                const badge = {};
+                const badge = { customFields: {} };
                 const index = entry.dataset.index;
                 
                 entry.querySelectorAll('.standard-fields .form-field').forEach(input => {
-                    if (input.dataset.customKey || input.dataset.customValue) return;
                     const key = input.id.split('-')[2];
                     if(input.value) badge[key] = input.value;
                 });
@@ -502,8 +520,12 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 entry.querySelectorAll(`#badge-${index}-custom-fields .custom-field`).forEach(div => {
                     const keyInput = div.querySelector('[data-custom-key]');
                     const valueInput = div.querySelector('[data-custom-value]');
-                    if (keyInput && valueInput && keyInput.value) {
-                        badge[keyInput.value] = valueInput.value;
+                    const typeInput = div.querySelector('input[type="radio"]:checked');
+                    if (keyInput && valueInput && typeInput && keyInput.value) {
+                        badge.customFields[keyInput.value] = {
+                            type: typeInput.value,
+                            value: valueInput.value
+                        };
                     }
                 });
                 newConfig.badges.push(badge);
@@ -531,20 +553,27 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             let objectToShow = {};
             let filename = 'data.json';
             if (type === 'issuer') {
-                const { privateKey, ...issuerData } = data.issuer;
+                const { privateKey, customFields, ...issuerData } = data.issuer;
                 objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "Profile", ...issuerData };
+                if (customFields) {
+                    for(const key in customFields) {
+                        if (customFields[key].type === 'global') objectToShow[key] = customFields[key].value;
+                    }
+                }
                 if (objectToShow.publicKey) { try { objectToShow.publicKey = JSON.parse(objectToShow.publicKey); } catch(e){} }
                 filename = 'issuer.json';
             } else if (type === 'badge' && data.badges[index]) {
-                const badge = data.badges[index];
-                objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "BadgeClass", id: badge.id, name: badge.name, description: badge.description, image: badge.image_base_64, criteria: { narrative: badge.criteria }, issuer: data.issuer.id };
+                const { alias, customFields, ...badge } = data.badges[index];
+                objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "BadgeClass", ...badge, criteria: { narrative: badge.criteria }, issuer: data.issuer.id };
+                delete objectToShow.image_base_64;
+                objectToShow.image = badge.image_base_64;
                 if (badge.tags) objectToShow.tags = badge.tags.split(',').map(t => t.trim());
-                Object.keys(badge).forEach(key => {
-                    if(!['alias','id','name','description','image_base_64','criteria','tags'].includes(key)) {
-                        objectToShow[key] = badge[key];
+                if (customFields) {
+                    for(const key in customFields) {
+                        if (customFields[key].type === 'global') objectToShow[key] = customFields[key].value;
                     }
-                });
-                filename = `badgeclass-${badge.alias || 'badge'}.json`;
+                }
+                filename = `badgeclass-${alias || 'badge'}.json`;
             }
             
             const modal = document.getElementById('json-viewer-modal');
@@ -650,9 +679,46 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 badgeSelect.appendChild(option);
             });
         }
+        
+        function updateBakeForm() {
+            const badgeSelect = document.getElementById('badge-select');
+            const dynamicFieldsContainer = document.getElementById('dynamic-bake-fields');
+            dynamicFieldsContainer.innerHTML = '';
+            
+            const selectedAlias = badgeSelect.value;
+            if (!selectedAlias || !config) return;
+
+            const badge = config.badges.find(b => b.alias === selectedAlias);
+            if (badge && badge.customFields) {
+                for (const key in badge.customFields) {
+                    const field = badge.customFields[key];
+                    if (field.type.startsWith('baking-')) {
+                        const div = document.createElement('div');
+                        div.className = 'dynamic-bake-field';
+                        const isRequired = field.type === 'baking-required';
+                        
+                        let inputHTML = `<input type="text" id="bake-custom-${key}" data-key="${key}" ${isRequired ? 'required' : ''}>`;
+                        if (!isRequired) {
+                            inputHTML += `<button type="button" class="danger">X</button>`;
+                        }
+                        
+                        div.innerHTML = `
+                            <label for="bake-custom-${key}">${key}${isRequired ? ' *' : ''}</label>
+                            ${inputHTML}
+                        `;
+                        dynamicFieldsContainer.appendChild(div);
+
+                        if (!isRequired) {
+                            div.querySelector('.danger').addEventListener('click', () => div.remove());
+                        }
+                    }
+                }
+            }
+        }
 
         function attachDynamicListeners() {
             document.getElementById('baker-form').addEventListener('submit', handleBake);
+            document.getElementById('badge-select').addEventListener('change', updateBakeForm);
             document.querySelectorAll('input[name="expiration"]').forEach(radio => radio.addEventListener('change', (e) => {
                 document.getElementById('expires-date').classList.toggle('hidden', e.target.value === 'no');
             }));
@@ -684,6 +750,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 return;
             }
 
+            const bakeTimeCustomFields = {};
+            document.querySelectorAll('#dynamic-bake-fields .dynamic-bake-field').forEach(field => {
+                const input = field.querySelector('input[type="text"]');
+                if (input.value) { // Only include if value is not empty
+                    bakeTimeCustomFields[input.dataset.key] = input.value;
+                }
+            });
+
             const issuerData = extractDataFromForm().issuer;
             if (verificationType === 'signed' && !issuerData.privateKey) {
                 displayError(bakerError, 'A private key must be provided in Issuer Management to create a signed badge.');
@@ -692,7 +766,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
             try {
                 const badgeData = config.badges.find(b => b.alias === badgeAlias);
-                const assertion = await buildAssertion(badgeData, recipientEmail, issuedDate, expiresDate, evidenceUrl, verificationType);
+                const assertion = await buildAssertion(badgeData, recipientEmail, issuedDate, expiresDate, evidenceUrl, verificationType, bakeTimeCustomFields);
                 const isSigned = verificationType === 'signed';
                 const bakedPngDataUri = await bakePng(badgeData.image_base_64, assertion, isSigned);
                 
@@ -718,7 +792,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
         }
         
-        async function buildAssertion(badge, email, issuedOn, expires, evidence, verificationType) {
+        async function buildAssertion(badge, email, issuedOn, expires, evidence, verificationType, bakeTimeCustomFields) {
             const recipientIdentity = await hashRecipient(email);
             const issuerData = extractDataFromForm().issuer;
             
@@ -729,12 +803,19 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 issuer: verificationType === 'signed' ? issuerData.id : { ...issuerData }
             };
             if(badgeClass.issuer.privateKey) delete badgeClass.issuer.privateKey;
+            if(badgeClass.issuer.customFields) delete badgeClass.issuer.customFields;
             if (badge.tags) badgeClass.tags = badge.tags.split(',').map(t => t.trim());
-            Object.keys(badge).forEach(key => {
-                if(!['alias','id','name','description','image_base_64','criteria','tags'].includes(key)) {
-                    badgeClass[key] = badge[key];
+            
+            if (issuerData.customFields) {
+                for (const key in issuerData.customFields) {
+                    if (issuerData.customFields[key].type === 'global') badgeClass.issuer[key] = issuerData.customFields[key].value;
                 }
-            });
+            }
+            if (badge.customFields) {
+                for (const key in badge.customFields) {
+                    if (badge.customFields[key].type === 'global') badgeClass[key] = badge.customFields[key].value;
+                }
+            }
 
             let assertion = {
                 "@context": "https://w3id.org/openbadges/v2",
@@ -742,6 +823,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 recipient: recipientIdentity,
                 badge: badgeClass,
                 issuedOn: new Date(`${issuedOn}T00:00:00Z`).toISOString(),
+                ...bakeTimeCustomFields
             };
             
             if (expires) assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
