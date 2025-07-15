@@ -57,9 +57,10 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         .custom-field { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
         .custom-field input { margin-bottom: 0; }
         .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; text-align: left;}
-        .summary-table th, .summary-table td { border: 1px solid #ddd; padding: 8px; }
+        .summary-table th, .summary-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
         .summary-table th { background-color: #f2f2f2; width: 30%; }
-        .summary-table img { max-width: 60px; cursor: pointer; }
+        .summary-table img { max-width: 60px; cursor: pointer; transition: transform 0.2s; }
+        .summary-table img:hover { transform: scale(1.1); }
         .summary-table h4 { margin: 10px 0 5px; border: none; }
         footer { text-align: center; margin-top: 30px; color: #6c757d; font-size: 0.9em; }
         .hidden { display: none; }
@@ -223,13 +224,13 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
         initializeViewsAndListeners();
 
-        // FIX: Use more robust event delegation for tab switching.
         document.querySelector('.tabs .tab-buttons').addEventListener('click', (event) => {
             if (event.target.tagName === 'BUTTON') {
                 const tabName = event.target.id.split('-')[0];
                 switchTab(tabName);
             }
         });
+
         configFile.addEventListener('change', handleConfigFile);
         createNewConfigBtn.addEventListener('click', createNewConfig);
         clearSessionBtn.addEventListener('click', clearSession);
@@ -289,10 +290,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 if (parsedJson.metadata && parsedJson.encryptedData) {
                     const password = await promptForPassword('Decrypt Configuration');
                     if (!password) return;
-                    
                     let decryptedText;
                     try {
-                         decryptedText = await decryptData(parsedJson, password);
+                        decryptedText = await decryptData(parsedJson, password);
                     } catch (e) {
                         throw new Error("Decryption failed. Please check your password or the file may be corrupt.");
                     }
@@ -301,7 +301,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                     processConfig(content);
                 }
             } catch (err) {
-                displayError(configError, `Error parsing JSON file: ${err.message}`);
+                displayError(configError, `Error processing file: ${err.message}`);
             }
         }
 
@@ -340,10 +340,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             for (const key in customIssuerFields) {
                 addCustomFieldInput('issuer-custom-fields', 'issuer-custom', key, customIssuerFields[key]);
             }
-
+            
             document.getElementById('generate-key-btn').addEventListener('click', generateKeyPair);
-            document.getElementById('toggle-pk-visibility').addEventListener('click', togglePrivateKeyVisibility);
-            document.getElementById('issuer-image_base_64-upload').addEventListener('change', (e) => handleImageUpload(e, 'issuer-image_base_64-preview', 'issuer-image_base_64'));
+            if (document.getElementById('toggle-pk-visibility')) {
+                document.getElementById('toggle-pk-visibility').addEventListener('click', togglePrivateKeyVisibility);
+            }
+            if (document.getElementById('issuer-image_base_64-upload')){
+                document.getElementById('issuer-image_base_64-upload').addEventListener('change', (e) => handleImageUpload(e, 'issuer-image_base_64-preview', 'issuer-image_base_64'));
+            }
             
             const badgesContainer = document.getElementById('badges-container');
             badgesContainer.innerHTML = '';
@@ -402,14 +406,13 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
 
         function createFormFields(data, prefix) {
             const fields = {
-                issuer: { id: {r:true}, name: {r:true}, url: {r:true}, email: {r:false}, description: {r:false, t:'textarea'}, image_base_64: {r:false, t:'image'}, publicKey: {r:false, t:'textarea', h:"Optional. A public key in JWK format for signing badges."}, privateKey: {r:false, t:'textarea', p:true, h:"Your secret private key in JWK format. Required for signing."} },
-                badge: { alias: {r:true}, id: {r:true}, name: {r:true}, description: {r:true}, criteria: {r:true, t:'textarea'}, image_base_64: {r:true, t:'image'}, tags: {r:false} }
+                issuer: { id: {r:true}, name: {r:true}, url: {r:true}, email: {r:false}, description: {r:false, t:'textarea'}, image_base_64: {r:false, t:'image'}, publicKey: {r:false, t:'textarea', h:"Optional. JWK for signing."}, privateKey: {r:false, t:'textarea', p:true, h:"Secret JWK for signing."} },
+                badge: { alias: {r:true}, id: {r:true}, name: {r:true}, description: {r:true}, criteria: {r:true, t:'textarea'}, image_base_64: {r:true, t:'image'}, tags: {r:false, h:"Comma-separated"} }
             };
             const fieldType = prefix.startsWith('badge') ? 'badge' : 'issuer';
             
             let html = Object.entries(fields[fieldType]).map(([key, opts]) => {
                 const value = (data && data[key]) ? data[key] : '';
-                const title = opts.h || `A comma-separated list of keywords.`;
                 let inputElement;
                 if (opts.t === 'image') {
                     const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
@@ -422,7 +425,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                             </div>
                         </div>`;
                 } else if (opts.t === 'textarea') {
-                    inputElement = `<textarea class="form-field" id="${prefix}-${key}" ${opts.r ? 'required' : ''} title="${opts.h || ''}">${escapeHtml(value)}</textarea>`;
+                    inputElement = `<textarea class="form-field" id="${prefix}-${key}" ${opts.r ? 'required' : ''} placeholder="${opts.h || ''}">${escapeHtml(value)}</textarea>`;
                 } else {
                     inputElement = `<input type="${opts.p ? 'password' : 'text'}" class="form-field" id="${prefix}-${key}" value="${escapeHtml(value)}" ${opts.r ? 'required' : ''} placeholder="${opts.h || ''}">`;
                 }
@@ -449,8 +452,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             };
             reader.readAsDataURL(file);
         }
-
-        function createKeyGenButton() { return ''; /* Now created inside createFormFields */ }
 
         function togglePrivateKeyVisibility() {
             const pkInput = document.getElementById('issuer-privateKey');
@@ -543,10 +544,8 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const contentTextarea = document.getElementById('json-viewer-content');
             const downloadBtn = document.getElementById('json-download-btn');
             const closeBtn = document.getElementById('json-close-btn');
-
             const jsonString = JSON.stringify(objectToShow, null, 2);
             contentTextarea.value = jsonString;
-
             downloadBtn.onclick = () => triggerDownload(new Blob([jsonString], { type: 'application/json' }), filename);
             closeBtn.onclick = () => modal.classList.add('hidden');
             modal.classList.remove('hidden');
@@ -570,6 +569,9 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 const modalCancel = modal.querySelector('#modal-cancel');
                 
                 modalTitle.textContent = title;
+                modalPassword.value = '';
+                modalConfirmPassword.value = '';
+                modalError.classList.add('hidden');
                 modalConfirmPassword.classList.toggle('hidden', !needsConfirmation);
                 modalWarning.classList.toggle('hidden', !isEncrypting);
                 if (isEncrypting) {
@@ -785,27 +787,30 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         
         async function displayVerificationSummary(assertion, isSigned, jws) {
             const fieldMap = {
-                'badge': { label: 'Badge Details', fields: { 'name': 'Name', 'description': 'Description', 'image': 'Image', 'criteria.narrative': 'Criteria' } },
-                'issuer': { label: 'Issuer Details', fields: { 'name': 'Name', 'url': 'URL', 'id': 'Profile URL', 'image': 'Logo' } },
-                'recipient': { label: 'Recipient', fields: { 'identity': 'Identity', 'hashed': 'Hashed', 'salt': 'Salt', 'type': 'Type' } },
-                'assertion': { label: 'Assertion Details', fields: { 'issuedOn': 'Issued On', 'expires': 'Expires', 'id': 'ID', 'evidence.id': 'Evidence' } }
+                badge: { label: 'Badge Details', fields: { 'name': 'Name', 'description': 'Description', 'image': 'Image', 'criteria.narrative': 'Criteria' } },
+                issuer: { label: 'Issuer Details', fields: { 'name': 'Name', 'url': 'URL', 'id': 'Profile URL', 'image': 'Logo' } },
+                recipient: { label: 'Recipient', fields: { 'identity': 'Identity', 'hashed': 'Hashed', 'salt': 'Salt', 'type': 'Type' } },
+                assertion: { label: 'Assertion Details', fields: { 'issuedOn': 'Issued On', 'expires': 'Expires', 'id': 'ID', 'evidence.id': 'Evidence' } }
             };
 
             let tableHTML = `<table class="summary-table">`;
             for (const section in fieldMap) {
+                const sourceObject = section === 'assertion' ? assertion : getNested(assertion, section);
+                if (!sourceObject) continue;
+                
                 tableHTML += `<tr><th colspan="2"><h4>${fieldMap[section].label}</h4></th></tr>`;
                 for(const key in fieldMap[section].fields) {
-                    const value = getNested(assertion, (section === 'assertion' ? key : `${section}.${key}`));
+                    const value = getNested(sourceObject, key);
                     if (value !== undefined && value !== null) {
                         const label = fieldMap[section].fields[key];
                         let renderedValue = escapeHtml(value.toString());
-                        if (key.endsWith('image') && value.startsWith('data:image')) {
+                        if ((key.endsWith('image') || key.endsWith('image_base_64')) && value.startsWith('data:image')) {
                             renderedValue = `<img src="${value}" alt="${label} preview" class="summary-image">`;
-                        }
-                        if (key.endsWith('On') || key === 'expires') {
+                        } else if (key.endsWith('On') || key === 'expires') {
                            try { renderedValue = new Date(value).toUTCString(); } catch(e){}
+                        } else if (key === 'identity') {
+                            renderedValue = `<span title="${value}">${value.substring(0, 50)}...</span>`;
                         }
-                        if (key === 'identity') renderedValue = value.substring(0, 50) + '...';
                         tableHTML += `<tr><th>${label}</th><td>${renderedValue}</td></tr>`;
                     }
                 }
@@ -840,9 +845,16 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                     document.getElementById('status-signature').textContent = '⚠️ No public key URL found in badge for verification.';
                 }
             } else {
-                const issuerUrl = getNested(assertion, 'badge.issuer.id');
-                if(issuerUrl) {
-                    const verifyResult = await verifyUrl(issuerUrl);
+                let issuerId = '';
+                const issuer = getNested(assertion, 'badge.issuer');
+                if (typeof issuer === 'string') {
+                    issuerId = issuer;
+                } else if (typeof issuer === 'object' && issuer !== null) {
+                    issuerId = issuer.id;
+                }
+                
+                if(issuerId) {
+                    const verifyResult = await verifyUrl(issuerId);
                     document.getElementById('status-hosted').textContent = verifyResult.success ? '✅ Verified' : `❌ Host Check Failed (${verifyResult.reason})`;
                 } else {
                     document.getElementById('status-hosted').textContent = '⚠️ No issuer URL found';
