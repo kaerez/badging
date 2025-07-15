@@ -170,12 +170,12 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
     
     <footer>(C) 2025 KSEC - Erez Kalman</footer>
 
-    <script>
+   <script>
     window.addEventListener('DOMContentLoaded', () => {
         let config = null;
-        let passwordModalCallback = null;
         let currentAssertionData = null;
-        
+
+        // --- Element Definitions (no changes here) ---
         const tabs = {
             manager: { btn: document.getElementById('manage-tab-btn'), view: document.getElementById('manager-view') },
             baker:   { btn: document.getElementById('bake-tab-btn'),   view: document.getElementById('baker-view') },
@@ -185,30 +185,42 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         const configLoaderSection = document.getElementById('config-loader-section');
         const managerFormSection = document.getElementById('manager-form-section');
         const createNewConfigBtn = document.getElementById('create-new-config-btn');
-        const addBadgeBtn = document.getElementById('add-badge-btn');
-        const exportPlainBtn = document.getElementById('export-plain-btn');
-        const exportEncryptedBtn = document.getElementById('export-encrypted-btn');
-        const generateIssuerJsonBtn = document.getElementById('generate-issuer-json-btn');
         const clearSessionBtn = document.getElementById('clear-session-btn');
         const passwordModal = document.getElementById('password-modal');
         const configError = document.getElementById('config-error');
 
+        // --- Initial Setup ---
+        initializeViewsAndListeners();
+
+        // --- Main Event Listeners ---
         Object.values(tabs).forEach(tab => tab.btn.addEventListener('click', () => switchTab(tab.btn.id.split('-')[0])));
         configFile.addEventListener('change', handleConfigFile);
         createNewConfigBtn.addEventListener('click', createNewConfig);
+        clearSessionBtn.addEventListener('click', clearSession);
         
-        function initManagerFormListeners() {
+        // --- Functions ---
+
+        // FIX: Decouple UI setup from config loading.
+        // This function now runs once on page load to prepare all UI elements and listeners.
+        function initializeViewsAndListeners() {
+            // Populate views from templates
+            tabs.baker.view.innerHTML = document.getElementById('baker-template').innerHTML;
+            tabs.verify.view.innerHTML = document.getElementById('verifier-template').innerHTML;
+            passwordModal.innerHTML = document.getElementById('password-modal-template').innerHTML;
+
+            // Attach listeners for dynamic content in Baker and Verifier tabs
+            attachDynamicListeners();
+
+            // Attach listeners for manager form (these are static, but good to group here)
             document.getElementById('add-badge-btn').addEventListener('click', () => addBadgeEntry());
             document.getElementById('export-plain-btn').addEventListener('click', handleExportPlain);
             document.getElementById('export-encrypted-btn').addEventListener('click', handleExportEncrypted);
             document.getElementById('generate-issuer-json-btn').addEventListener('click', () => generateSingleJson('issuer'));
         }
-        initManagerFormListeners();
         
-        clearSessionBtn.addEventListener('click', clearSession);
-
         function switchTab(tabName) {
-            if (tabs[tabName].btn.disabled) return;
+            // This function is now robust and won't fail
+            if (!tabs[tabName] || tabs[tabName].btn.disabled) return;
             Object.values(tabs).forEach(tab => {
                 tab.view.classList.add('hidden');
                 tab.btn.classList.remove('active');
@@ -237,7 +249,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 displayError(configError, "Invalid file type. Please upload a JSON file.");
                 return;
             }
-
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const content = e.target.result;
@@ -258,17 +269,12 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             reader.readAsText(file);
         }
 
+        // FIX: This function is now simplified.
         function processConfig(configText) {
             configError.classList.add('hidden');
             try {
                 config = JSON.parse(configText);
                 if (!config.issuer || !config.badges) throw new Error("Config must contain 'issuer' and 'badges' keys.");
-                
-                tabs.baker.view.innerHTML = document.getElementById('baker-template').innerHTML;
-                tabs.verifier.view.innerHTML = document.getElementById('verifier-template').innerHTML;
-                passwordModal.innerHTML = document.getElementById('password-modal-template').innerHTML;
-
-                attachDynamicListeners();
                 
                 populateManagerForm(config);
                 populateBadgeSelector(config.badges);
@@ -290,7 +296,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             document.getElementById('generate-key-btn').addEventListener('click', generateKeyPair);
             document.getElementById('toggle-pk-visibility').addEventListener('click', togglePrivateKeyVisibility);
             document.getElementById('issuer-image_base_64-upload').addEventListener('change', (e) => handleImageUpload(e, 'issuer-image_base_64-preview', 'issuer-image_base_64'));
-
             const badgesContainer = document.getElementById('badges-container');
             badgesContainer.innerHTML = '';
             data.badges.forEach((badge, index) => addBadgeEntry(badge, index));
@@ -325,9 +330,11 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 const value = (data && data[key]) ? data[key] : '';
                 let inputElement;
                 if (opts.t === 'image') {
+                    // FIX: Use a reliable data URI for the placeholder image to prevent console errors.
+                    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
                     inputElement = `
                         <div class="image-manager">
-                            <img id="${prefix}-${key}-preview" src="${value || 'https://via.placeholder.com/100'}" alt="Image preview">
+                            <img id="${prefix}-${key}-preview" src="${value || placeholder}" alt="Image preview">
                             <div class="controls">
                                 <input type="file" id="${prefix}-${key}-upload" accept="image/png,image/jpeg">
                                 <textarea class="form-field hidden" id="${prefix}-${key}">${escapeHtml(value)}</textarea>
@@ -341,12 +348,15 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 
                 const visibilityToggle = opts.p ? `<i class="toggle-visibility" id="toggle-pk-visibility">👁️</i>` : '';
                 const inputGroup = opts.p ? `<div class="input-group">${inputElement}${visibilityToggle}</div>` : inputElement;
-
                 const warning = key === 'privateKey' ? `<div class="warning-message"><strong>Warning:</strong> Your private key is a secret. The plain-text export will omit this key.</div>` : '';
                 return `<label for="${prefix}-${key}">${key}${opts.r ? ' (required)' : ''}</label>${inputGroup}${opts.h ? `<details><summary>Help</summary><p>${opts.h}</p></details>` : ''}${warning}`;
             }).join('');
         }
         
+        // --- The rest of the functions (handleImageUpload, generateKeyPair, etc.) remain unchanged ---
+        // ... (All functions from handleImageUpload to crc32 are the same as in your provided file) ...
+        // ... I will omit them here for brevity but they must be included in your final script ...
+
         function handleImageUpload(event, previewId, textareaId) {
             const file = event.target.files[0];
             if (!file || !file.type.startsWith('image/')) return;
@@ -437,7 +447,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         function promptForPassword(title, needsConfirmation = false, isEncrypting = false) {
             return new Promise((resolve) => {
                 const modal = document.getElementById('password-modal');
-                modal.innerHTML = document.getElementById('password-modal-template').innerHTML;
                 const modalTitle = document.getElementById('modal-title');
                 const modalWarning = document.getElementById('modal-warning');
                 const modalError = document.getElementById('modal-error');
@@ -591,7 +600,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 }
             });
 
-
             let assertion = {
                 "@context": "https://w3id.org/openbadges/v2",
                 type: "Assertion",
@@ -621,7 +629,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 displayError(document.getElementById('verify-error'), "Invalid file type. Please upload a PNG image.");
                 return;
             }
-
             const verifyError = document.getElementById('verify-error');
             const verifySummary = document.getElementById('verify-summary');
             const verifyOutput = document.getElementById('verify-output');
@@ -667,7 +674,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                     }
                     tableHTML += `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value.toString())}</td></tr>`;
                 }
-
                 tableHTML += `
                     <tr><th>Hosted Status</th><td>${status.hosted}</td></tr>
                     <tr><th>Signature Status</th><td>${status.signature}</td></tr>
@@ -723,18 +729,14 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             try {
                 const parts = jws.split('.');
                 if (parts.length !== 3) return { success: false, reason: 'Invalid JWS format' };
-
                 const response = await fetch(publicKeyUrl, { mode: 'cors' });
                 if (!response.ok) return { success: false, reason: `Could not fetch public key (HTTP ${response.status})` };
                 const issuerProfile = await response.json();
                 const publicKeyJwk = issuerProfile.publicKey;
                 if(!publicKeyJwk) return { success: false, reason: 'Public key not found in issuer profile' };
-                
                 const publicKey = await window.crypto.subtle.importKey("jwk", publicKeyJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
-                
                 const dataToVerify = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
                 const signature = new Uint8Array(atob(parts[2].replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
-                
                 const isValid = await window.crypto.subtle.verify({ name: "ECDSA", hash: { name: "SHA-256" } }, publicKey, signature, dataToVerify);
                 return { success: isValid, reason: isValid ? 'OK' : 'Signature mismatch' };
             } catch (e) {
@@ -875,6 +877,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             return (crc ^ -1) >>> 0;
         }
 
+        // --- Auto-load config on startup ---
         fetch('config.json')
             .then(response => {
                 if (response.ok) {
@@ -889,6 +892,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             })
             .catch(err => console.error("Could not auto-load config.json:", err));
     });
-</script>
+    </script>
 </body>
 </html>
