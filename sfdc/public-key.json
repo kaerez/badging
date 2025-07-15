@@ -3,5 +3,5 @@
   "type": "CryptographicKey",
   "id": "https://sfdc.co/url/certpub",
   "owner": "https://sfdc.co/url/certiss",
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBNp+AJrnE+N4auqanTpSnNYphKBI\nh6Oy9M6i55E3lWapyHEAn0KHgiSu1VgYyfdxKtjjFb5q6g5fVrOdiSku+9E=\n-----END PUBLIC KEY-----"
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBCQZjapRxbf637KSKl9M15malliG\nqM506MHbX8p0aivniFhFDs0F/fKJu3vcf2vQSLQjMNHWEFbyTNQcN4rB+2M=\n-----END PUBLIC KEY-----"
 }
