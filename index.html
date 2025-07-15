@@ -179,7 +179,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         const tabs = {
             manager: { btn: document.getElementById('manage-tab-btn'), view: document.getElementById('manager-view') },
             baker:   { btn: document.getElementById('bake-tab-btn'),   view: document.getElementById('baker-view') },
-            verifier:{ btn: document.getElementById('verify-tab-btn'), view: document.getElementById('verifier-view') }
+            verify:  { btn: document.getElementById('verify-tab-btn'), view: document.getElementById('verifier-view') }
         };
         const configFile = document.getElementById('configFile');
         const configLoaderSection = document.getElementById('config-loader-section');
@@ -203,7 +203,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             document.getElementById('export-encrypted-btn').addEventListener('click', handleExportEncrypted);
             document.getElementById('generate-issuer-json-btn').addEventListener('click', () => generateSingleJson('issuer'));
         }
-        initManagerFormListeners(); // Attach listeners for the static part of the manager form
+        initManagerFormListeners();
         
         clearSessionBtn.addEventListener('click', clearSession);
 
@@ -497,6 +497,18 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             a.href = url; a.download = filename;
             document.body.appendChild(a); a.click();
             document.body.removeChild(a); URL.revokeObjectURL(url);
+        }
+
+        function populateBadgeSelector(badges) {
+            const badgeSelect = document.getElementById('badge-select');
+            if (!badgeSelect) return;
+            badgeSelect.innerHTML = '';
+            badges.forEach(badge => {
+                const option = document.createElement('option');
+                option.value = badge.alias;
+                option.textContent = `${badge.name} (${badge.alias})`;
+                badgeSelect.appendChild(option);
+            });
         }
 
         function attachDynamicListeners() {
@@ -862,7 +874,21 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
             return (crc ^ -1) >>> 0;
         }
+
+        fetch('config.json')
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                }
+                return Promise.resolve(null);
+            })
+            .then(configText => {
+                if (configText) {
+                    processConfig(configText);
+                }
+            })
+            .catch(err => console.error("Could not auto-load config.json:", err));
     });
-    </script>
+</script>
 </body>
 </html>
