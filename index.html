@@ -23,7 +23,10 @@
         table.summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         table.summary-table th, table.summary-table td { text-align: left; padding: 8px; border: 1px solid #ddd; }
         table.summary-table th { background-color: #f2f2f2; width: 120px; }
-        .verification-result { margin-top: 10px; font-weight: bold; }
+        .verification-result, .error-message { margin-top: 10px; font-weight: bold; padding: 10px; border-radius: 4px; }
+        .error-message { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb;}
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin-top: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -34,11 +37,13 @@
             <h2>1. Load Configuration</h2>
             <p>Attempting to load <strong>config.yaml</strong> or <strong>config.json</strong> automatically. If neither is found, please load your config file manually.</p>
             <input type="file" id="configFile" accept=".yaml,.yml,.json">
+            <div id="config-error" class="error-message hidden"></div>
         </section>
 
         <section id="baker-section" class="hidden">
             <h2>2. Issue a Badge</h2>
             <form id="baker-form">
+                <div id="baker-error" class="error-message hidden"></div>
                 <label for="badge-select">Select Badge:</label>
                 <select id="badge-select" required></select>
 
@@ -56,6 +61,7 @@
                 <input type="date" id="expires-date" class="hidden">
 
                 <button type="submit">Bake Badge</button>
+                <div id="bake-spinner" class="spinner hidden"></div>
             </form>
         </section>
 
@@ -75,6 +81,7 @@
             <h2>Badge Verifier</h2>
             <p>Upload a baked PNG badge to check its metadata.</p>
             <input type="file" id="verifyFile" accept=".png">
+            <div id="verify-error" class="error-message hidden"></div>
             
             <div id="verify-summary" class="hidden">
                 <h3>Badge Summary</h3>
@@ -85,13 +92,15 @@
                 <button id="verify-recipient-btn">Verify Recipient</button>
                 <div id="recipient-verification-result" class="verification-result"></div>
                 
-                <button id="toggle-json-btn" style="margin-top: 15px;">Show Full Assertion</button>
+                <button id="toggle-json-btn" style="margin-top: 15px;">Show/Hide Full Assertion</button>
             </div>
             <pre id="verify-output" class="hidden"></pre>
         </section>
     </main>
 
     <script>
+    // FIX: Wrap all script logic in a DOMContentLoaded listener
+    window.addEventListener('DOMContentLoaded', () => {
         // --- DOM Elements ---
         const configFile = document.getElementById('configFile');
         const configSection = document.getElementById('config-section');
@@ -113,13 +122,16 @@
         const verifyRecipientBtn = document.getElementById('verify-recipient-btn');
         const recipientVerificationResult = document.getElementById('recipient-verification-result');
         const toggleJsonBtn = document.getElementById('toggle-json-btn');
+        const configError = document.getElementById('config-error');
+        const bakerError = document.getElementById('baker-error');
+        const bakeSpinner = document.getElementById('bake-spinner');
+        const verifyError = document.getElementById('verify-error');
         
         let config = {};
-        let currentAssertionData = null; // Store data for verifier
+        let currentAssertionData = null;
 
-        // --- Event Listeners ---
-        window.addEventListener('DOMContentLoaded', async () => {
-            document.getElementById('issued-date').valueAsDate = new Date();
+        // --- Auto-load Config Logic ---
+        (async () => {
             try {
                 const response = await fetch('config.yaml');
                 if (!response.ok) throw new Error('YAML not found');
@@ -135,8 +147,12 @@
                     console.info("Neither config.yaml nor config.json found. Waiting for manual upload.");
                 }
             }
-        });
+        })();
         
+        // --- Initial UI Setup ---
+        issuedDateInput.valueAsDate = new Date();
+
+        // --- Event Listeners ---
         configFile.addEventListener('change', handleConfigFile);
         bakerForm.addEventListener('submit', handleBake);
         verifyFile.addEventListener('change', handleVerifyFile);
@@ -144,22 +160,41 @@
         toggleJsonBtn.addEventListener('click', () => {
              verifyOutput.classList.toggle('hidden');
         });
-
         expirationRadios.forEach(radio => {
             radio.addEventListener('change', (e) => {
                 expiresDateInput.classList.toggle('hidden', e.target.value === 'no');
             });
         });
 
+        // --- Display Error Function ---
+        function displayError(element, message) {
+            element.textContent = message;
+            element.classList.remove('hidden');
+        }
+
         // --- Core Logic ---
+        function handleConfigFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fileType = file.name.endsWith('.json') ? 'json' : 'yaml';
+                processConfig(e.target.result, fileType);
+            };
+            reader.readAsText(file);
+        }
+
         function processConfig(configText, type) {
+            configError.classList.add('hidden');
             try {
                 config = type === 'json' ? JSON.parse(configText) : jsyaml.load(configText);
+                if (!config.issuer || !config.badges) throw new Error("Config must contain 'issuer' and 'badges' keys.");
                 populateBadgeSelector();
                 configSection.style.display = 'none';
                 bakerSection.classList.remove('hidden');
             } catch (error) {
-                alert(`Error parsing config file: ${error.message}`);
+                displayError(configError, `Error parsing config file: ${error.message}`);
             }
         }
 
@@ -175,6 +210,10 @@
 
         async function handleBake(event) {
             event.preventDefault();
+            bakerError.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            bakeSpinner.classList.remove('hidden');
+
             const badgeAlias = badgeSelect.value;
             const recipientEmail = document.getElementById('recipient-email').value;
             const issuedDate = issuedDateInput.value;
@@ -182,7 +221,8 @@
             const expiresDate = expiresOption === 'yes' ? expiresDateInput.value : null;
 
             if (!badgeAlias || !recipientEmail || !issuedDate || (expiresOption === 'yes' && !expiresDate)) {
-                alert('Please fill out all fields.');
+                displayError(bakerError, 'Please fill out all required fields.');
+                bakeSpinner.classList.add('hidden');
                 return;
             }
 
@@ -198,20 +238,23 @@
                 
                 resultSection.classList.remove('hidden');
             } catch (error) {
-                console.error("Baking failed:", error);
-                alert(`Could not bake badge: ${error.message}`);
+                displayError(bakerError, `Could not bake badge: ${error.message}`);
+            } finally {
+                bakeSpinner.classList.add('hidden');
             }
         }
 
         async function handleVerifyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
+
+            verifyError.classList.add('hidden');
+            verifySummary.classList.add('hidden');
+            verifyOutput.classList.add('hidden');
+            recipientVerificationResult.textContent = '';
+            
             const reader = new FileReader();
             reader.onload = async (e) => {
-                verifySummary.classList.add('hidden');
-                verifyOutput.classList.add('hidden');
-                recipientVerificationResult.textContent = '';
-
                 try {
                     const pngBytes = new Uint8Array(e.target.result);
                     currentAssertionData = extractBadgeData(pngBytes);
@@ -224,17 +267,15 @@
                         verifyOutput.classList.remove('hidden');
                     }
                 } catch (error) {
-                    verifyOutput.textContent = `Error reading badge: ${error.message}`;
-                    verifyOutput.classList.remove('hidden');
+                    displayError(verifyError, `Error reading badge: ${error.message}`);
                 }
             };
             reader.readAsArrayBuffer(file);
         }
         
         function displayVerificationSummary(assertion) {
-            // Defensive coding to prevent errors from malformed badges
-            const badgeName = assertion.badge ? assertion.badge.name : 'N/A';
-            const issuerName = (assertion.badge && assertion.badge.issuer) ? assertion.badge.issuer.name : 'N/A';
+            const badgeName = assertion.badge?.name || 'N/A';
+            const issuerName = assertion.badge?.issuer?.name || 'N/A';
             const issuedOn = assertion.issuedOn ? new Date(assertion.issuedOn).toLocaleDateString() : 'N/A';
             const expiresOn = assertion.expires ? new Date(assertion.expires).toLocaleDateString() : 'Never';
             
@@ -260,6 +301,8 @@
 
             try {
                 const { salt, identity } = currentAssertionData.recipient;
+                if (!salt || !identity) throw new Error("Recipient data is incomplete.");
+                
                 const identityParts = identity.split('$');
                 const expectedHash = identityParts.length > 1 ? identityParts[1] : identity;
 
@@ -274,7 +317,7 @@
                     recipientVerificationResult.style.color = 'red';
                 }
             } catch (e) {
-                recipientVerificationResult.textContent = 'Could not perform verification. Badge data may be incomplete.';
+                recipientVerificationResult.textContent = `Could not perform verification: ${e.message}`;
                 recipientVerificationResult.style.color = 'red';
             }
         }
@@ -293,15 +336,7 @@
                     "description": badge.description, 
                     "image": badge.image_base_64,
                     "criteria": { "narrative": badge.criteria }, 
-                    // CORRECTED: The full issuer object goes here for baked assertions
-                    "issuer": {
-                        "type": "Profile",
-                        "id": config.issuer.id,
-                        "name": config.issuer.name,
-                        "url": config.issuer.url,
-                        "email": config.issuer.email,
-                        "image": config.issuer.image_base_64
-                    }
+                    "issuer": config.issuer // Use the full issuer object for baked assertions
                 },
                 "issuedOn": new Date(`${issuedOn}T00:00:00Z`).toISOString(),
                 "verification": { "type": "hosted" }
@@ -313,14 +348,10 @@
         }
         
         // --- Helper and Utility Functions ---
-        function escapeHtml(unsafe) {
-            if (typeof unsafe !== 'string') return '';
-            return unsafe
-                 .replace(/&/g, "&amp;")
-                 .replace(/</g, "&lt;")
-                 .replace(/>/g, "&gt;")
-                 .replace(/"/g, "&quot;")
-                 .replace(/'/g, "&#039;");
+        function escapeHtml(text) {
+            if (typeof text !== 'string') return '';
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.replace(/[&<>"']/g, m => map[m]);
         }
         
         async function hashRecipient(email, salt = `salt-${Date.now()}`) {
@@ -424,6 +455,7 @@
             for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
             return (crc ^ -1) >>> 0;
         }
+    }); // End DOMContentLoaded
     </script>
 </body>
 </html>
