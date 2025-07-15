@@ -513,7 +513,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 const index = entry.dataset.index;
                 
                 entry.querySelectorAll('.standard-fields .form-field').forEach(input => {
-                    if (input.dataset.customKey || input.dataset.customValue) return;
                     const key = input.id.split('-')[2];
                     if(input.value) badge[key] = input.value;
                 });
@@ -805,13 +804,17 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const issuerData = extractDataFromForm().issuer;
             
             const { privateKey, ...publicIssuerData } = issuerData;
+            
+            const { alias, customFields, ...badgeProps } = badge;
             let badgeClass = {
-                type: "BadgeClass", id: badge.id, name: badge.name,
-                description: badge.description, image: badge.image_base_64,
+                ...badgeProps,
+                type: "BadgeClass",
                 criteria: { narrative: badge.criteria },
+                image: badge.image_base_64,
                 issuer: verificationType === 'signed' ? publicIssuerData.id : publicIssuerData
             };
-            delete badgeClass.issuer.publicKey;
+            delete badgeClass.image_base_64;
+            if(badgeClass.issuer.publicKey) delete badgeClass.issuer.publicKey;
             if (badge.tags) badgeClass.tags = badge.tags.split(',').map(t => t.trim());
             
             if (issuerData.customFields) {
@@ -976,7 +979,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         }
 
         async function verifyUrl(url) {
-            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+            const proxyUrl = 'http://localhost:8080/' + url;
             try {
                 const response = await fetch(proxyUrl);
                 return { success: response.ok, reason: response.ok ? 'OK' : `HTTP ${response.status}` };
@@ -986,7 +989,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         }
 
         async function verifyJws(jws, publicKeyUrl) {
-            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(publicKeyUrl);
+            const proxyUrl = 'http://localhost:8080/' + publicKeyUrl;
             try {
                 const parts = jws.split('.');
                 if (parts.length !== 3) return { success: false, reason: 'Invalid JWS format' };
@@ -1070,7 +1073,13 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                         const keyword = decoder.decode(chunkData.slice(0, nullIndex));
                         if (keyword === 'openbadges') {
                             let dataOffset = nullIndex + 1;
-                            if (type === 'iTXt') { dataOffset += 2; while (chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; while (chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; }
+                            if (type === 'iTXt') { 
+                                if (chunkData[dataOffset] === 0 && chunkData[dataOffset+1] === 0) { // No compression, no language tag
+                                    dataOffset += 4;
+                                } else { // Fallback for safety
+                                    dataOffset += 2; while (dataOffset < chunkData.length && chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; while (dataOffset < chunkData.length && chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; 
+                                }
+                            }
                             const assertionText = decoder.decode(chunkData.slice(dataOffset));
                             const isSigned = assertionText.split('.').length === 3 && assertionText.startsWith('ey');
                             let assertion;
@@ -1104,10 +1113,11 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const encoder = new TextEncoder();
             const keywordBytes = encoder.encode(keyword); const textBytes = encoder.encode(text);
 
+            // FIX: Using iTXt chunk for better compatibility
             const iTXtChunkData = new Uint8Array(keywordBytes.length + 5 + textBytes.length);
             let i = 0;
             iTXtChunkData.set(keywordBytes, i); i+= keywordBytes.length;
-            iTXtChunkData[i++] = 0; // Null separator
+            iTXtChunkData[i++] = 0; // Null separator for keyword
             iTXtChunkData[i++] = 0; // Compression flag: 0 (not compressed)
             iTXtChunkData[i++] = 0; // Compression method: 0 (zlib)
             iTXtChunkData[i++] = 0; // Language tag: null
