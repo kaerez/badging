@@ -23,6 +23,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
         input[type="text"], input[type="email"], input[type="date"], input[type="password"], input[type="number"], select, textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
         textarea { min-height: 80px; font-family: "Courier New", Courier, monospace; }
+        #json-viewer-modal textarea { height: 300px; }
         button { display: inline-block; background-color: var(--primary-color); color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; margin-right: 10px; margin-top: 5px; }
         button:hover { background-color: var(--primary-hover); }
         button:disabled { background-color: #6c757d; cursor: not-allowed; }
@@ -44,7 +45,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         summary { cursor: pointer; font-weight: normal; color: #555; font-size: 0.9em;}
         .badge-entry { border: 1px dashed #ccc; padding: 15px; margin-bottom: 15px; border-radius: 4px; }
         .modal { position: fixed; z-index: 100; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 30px; border-radius: 8px; width: 450px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-content { background: white; padding: 30px; border-radius: 8px; width: 90%; max-width: 600px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .verification-result { margin-top: 10px; font-weight: bold; }
         .input-group { position: relative; }
         .toggle-visibility { position: absolute; right: 10px; top: 10px; cursor: pointer; user-select: none; font-style: normal; }
@@ -105,6 +106,7 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
     </main>
 
     <div id="password-modal" class="modal hidden"></div>
+    <div id="json-viewer-modal" class="modal hidden"></div>
 
     <template id="baker-template">
         <section>
@@ -167,15 +169,24 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             <button id="modal-cancel" class="secondary">Cancel</button>
         </div>
     </template>
+
+    <template id="json-viewer-modal-template">
+        <div class="modal-content">
+            <h3 id="json-viewer-title">Generated JSON</h3>
+            <textarea id="json-viewer-content" readonly></textarea>
+            <br>
+            <button id="json-download-btn">Download</button>
+            <button id="json-close-btn" class="secondary">Close</button>
+        </div>
+    </template>
     
     <footer>(C) 2025 KSEC - Erez Kalman</footer>
 
-   <script>
+    <script>
     window.addEventListener('DOMContentLoaded', () => {
         let config = null;
         let currentAssertionData = null;
 
-        // --- Element Definitions (no changes here) ---
         const tabs = {
             manager: { btn: document.getElementById('manage-tab-btn'), view: document.getElementById('manager-view') },
             baker:   { btn: document.getElementById('bake-tab-btn'),   view: document.getElementById('baker-view') },
@@ -189,29 +200,18 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         const passwordModal = document.getElementById('password-modal');
         const configError = document.getElementById('config-error');
 
-        // --- Initial Setup ---
         initializeViewsAndListeners();
 
-        // --- Main Event Listeners ---
         Object.values(tabs).forEach(tab => tab.btn.addEventListener('click', () => switchTab(tab.btn.id.split('-')[0])));
         configFile.addEventListener('change', handleConfigFile);
         createNewConfigBtn.addEventListener('click', createNewConfig);
         clearSessionBtn.addEventListener('click', clearSession);
         
-        // --- Functions ---
-
-        // FIX: Decouple UI setup from config loading.
-        // This function now runs once on page load to prepare all UI elements and listeners.
         function initializeViewsAndListeners() {
-            // Populate views from templates
             tabs.baker.view.innerHTML = document.getElementById('baker-template').innerHTML;
             tabs.verify.view.innerHTML = document.getElementById('verifier-template').innerHTML;
             passwordModal.innerHTML = document.getElementById('password-modal-template').innerHTML;
-
-            // Attach listeners for dynamic content in Baker and Verifier tabs
             attachDynamicListeners();
-
-            // Attach listeners for manager form (these are static, but good to group here)
             document.getElementById('add-badge-btn').addEventListener('click', () => addBadgeEntry());
             document.getElementById('export-plain-btn').addEventListener('click', handleExportPlain);
             document.getElementById('export-encrypted-btn').addEventListener('click', handleExportEncrypted);
@@ -219,7 +219,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         }
         
         function switchTab(tabName) {
-            // This function is now robust and won't fail
             if (!tabs[tabName] || tabs[tabName].btn.disabled) return;
             Object.values(tabs).forEach(tab => {
                 tab.view.classList.add('hidden');
@@ -252,24 +251,27 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const content = e.target.result;
-                try {
-                    const parsedJson = JSON.parse(content);
-                    if (parsedJson.metadata && parsedJson.encryptedData) {
-                        const password = await promptForPassword('Decrypt Configuration');
-                        if (!password) return;
-                        const decryptedText = await decryptData(parsedJson, password);
-                        processConfig(decryptedText);
-                    } else {
-                        processConfig(content);
-                    }
-                } catch (err) {
-                    displayError(configError, `Error parsing JSON file: ${err.message}`);
-                }
+                await processUploadedConfig(content);
             };
             reader.readAsText(file);
         }
 
-        // FIX: This function is now simplified.
+        async function processUploadedConfig(content) {
+            try {
+                const parsedJson = JSON.parse(content);
+                if (parsedJson.metadata && parsedJson.encryptedData) {
+                    const password = await promptForPassword('Decrypt Configuration');
+                    if (!password) return;
+                    const decryptedText = await decryptData(parsedJson, password);
+                    processConfig(decryptedText);
+                } else {
+                    processConfig(content);
+                }
+            } catch (err) {
+                displayError(configError, `Error parsing JSON file: ${err.message}`);
+            }
+        }
+
         function processConfig(configText) {
             configError.classList.add('hidden');
             try {
@@ -330,7 +332,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
                 const value = (data && data[key]) ? data[key] : '';
                 let inputElement;
                 if (opts.t === 'image') {
-                    // FIX: Use a reliable data URI for the placeholder image to prevent console errors.
                     const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
                     inputElement = `
                         <div class="image-manager">
@@ -353,10 +354,6 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             }).join('');
         }
         
-        // --- The rest of the functions (handleImageUpload, generateKeyPair, etc.) remain unchanged ---
-        // ... (All functions from handleImageUpload to crc32 are the same as in your provided file) ...
-        // ... I will omit them here for brevity but they must be included in your final script ...
-
         function handleImageUpload(event, previewId, textareaId) {
             const file = event.target.files[0];
             if (!file || !file.type.startsWith('image/')) return;
@@ -426,16 +423,31 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
         function generateSingleJson(type, index) {
             const data = extractDataFromForm();
             let objectToShow = {};
+            let filename = 'data.json';
             if (type === 'issuer') {
                 const { privateKey, ...issuerData } = data.issuer;
                 objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "Profile", ...issuerData };
                 if (objectToShow.publicKey) { try { objectToShow.publicKey = JSON.parse(objectToShow.publicKey); } catch(e){} }
+                filename = 'issuer.json';
             } else if (type === 'badge' && data.badges[index]) {
                 const badge = data.badges[index];
                 objectToShow = { "@context": "https://w3id.org/openbadges/v2", type: "BadgeClass", id: badge.id, name: badge.name, description: badge.description, image: badge.image_base_64, criteria: { narrative: badge.criteria }, issuer: data.issuer.id };
                 if (badge.tags) objectToShow.tags = badge.tags.split(',').map(t => t.trim());
+                filename = `badgeclass-${badge.alias || 'badge'}.json`;
             }
-            alert("Generated JSON:\n\n" + JSON.stringify(objectToShow, null, 2));
+
+            const modal = document.getElementById('json-viewer-modal');
+            modal.innerHTML = document.getElementById('json-viewer-modal-template').innerHTML;
+            const contentTextarea = document.getElementById('json-viewer-content');
+            const downloadBtn = document.getElementById('json-download-btn');
+            const closeBtn = document.getElementById('json-close-btn');
+
+            const jsonString = JSON.stringify(objectToShow, null, 2);
+            contentTextarea.value = jsonString;
+
+            downloadBtn.onclick = () => triggerDownload(new Blob([jsonString], { type: 'application/json' }), filename);
+            closeBtn.onclick = () => modal.classList.add('hidden');
+            modal.classList.remove('hidden');
         }
         
         function clearSession() {
@@ -877,20 +889,28 @@ See the LICENSE, and LICENSE.AGPL.md files for full details.
             return (crc ^ -1) >>> 0;
         }
 
-        // --- Auto-load config on startup ---
-        fetch('config.json')
-            .then(response => {
-                if (response.ok) {
-                    return response.text();
+        async function autoLoadConfig() {
+            try {
+                const encryptedResponse = await fetch('config.encrypted.json');
+                if (encryptedResponse.ok) {
+                    const encryptedContent = await encryptedResponse.text();
+                    await processUploadedConfig(encryptedContent);
+                    return; // Stop if encrypted version is loaded
                 }
-                return Promise.resolve(null);
-            })
-            .then(configText => {
-                if (configText) {
-                    processConfig(configText);
+            } catch (e) { /* Fall through to plain config */ }
+            
+            try {
+                const plainResponse = await fetch('config.json');
+                if (plainResponse.ok) {
+                    const plainContent = await plainResponse.text();
+                    await processUploadedConfig(plainContent);
                 }
-            })
-            .catch(err => console.error("Could not auto-load config.json:", err));
+            } catch (e) {
+                console.error("Could not auto-load any config file:", e);
+            }
+        }
+        autoLoadConfig();
+
     });
     </script>
 </body>
