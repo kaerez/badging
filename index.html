@@ -1,4 +1,12 @@
 <!DOCTYPE html>
+<!--
+Copyright (C) 2025 KSEC - Erez Kalman. All Rights Reserved.
+
+SPDX-License-Identifier: (AGPL-3.0-or-later OR LicenseRef-Erez_Kalman_KSEC-Commercial)
+
+This source code is licensed under a dual-license model.
+See the LICENSE, and LICENSE.AGPL.md files for full details.
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -64,7 +72,7 @@
         
         <div class="tabs">
             <div class="tab-buttons">
-                <button id="manage-tab-btn" class="active">Issuer Management</button>
+                <button id="manager-tab-btn" class="active">Issuer Management</button>
                 <button id="bake-tab-btn" disabled title="Load or create a configuration first">Bake a Badge</button>
                 <button id="verify-tab-btn">Verify a Badge</button>
             </div>
@@ -202,7 +210,7 @@
         let currentAssertionData = null;
 
         const tabs = {
-            manager: { btn: document.getElementById('manage-tab-btn'), view: document.getElementById('manager-view') },
+            manager: { btn: document.getElementById('manager-tab-btn'), view: document.getElementById('manager-view') },
             baker:   { btn: document.getElementById('bake-tab-btn'),   view: document.getElementById('baker-view') },
             verify:  { btn: document.getElementById('verify-tab-btn'), view: document.getElementById('verifier-view') }
         };
@@ -364,8 +372,8 @@
             entryDiv.dataset.index = badgeIndex;
             entryDiv.innerHTML = `
                 <h4>Badge ${badgeIndex + 1}</h4>
-                ${createFormFields(standardBadgeFields, `badge-${badgeIndex}`)}
-                <div id="badge-${badgeIndex}-custom-fields"></div>
+                <div class="standard-fields">${createFormFields(standardBadgeFields, `badge-${badgeIndex}`)}</div>
+                <div id="badge-${badgeIndex}-custom-fields" class="custom-fields-container"></div>
                 <button type="button" class="add-custom-field-btn" data-target="badge-${badgeIndex}-custom-fields" data-prefix="badge-${badgeIndex}-custom">Add Custom Field</button>
                 <button type="button" class="danger remove-badge-btn">Remove Badge</button>
                 <button type="button" class="secondary generate-badge-json-btn">Generate BadgeClass JSON</button>
@@ -380,7 +388,8 @@
             entryDiv.querySelector('.add-custom-field-btn').addEventListener('click', (e) => addCustomFieldInput(e.target.dataset.target, e.target.dataset.prefix));
             entryDiv.querySelector('.remove-badge-btn').addEventListener('click', () => entryDiv.remove());
             entryDiv.querySelector('.generate-badge-json-btn').addEventListener('click', () => generateSingleJson('badge', badgeIndex));
-            entryDiv.querySelector(`#badge-${badgeIndex}-image_base_64-upload`).addEventListener('change', (e) => handleImageUpload(e, `badge-${badgeIndex}-image_base_64-preview`, `badge-${badgeIndex}-image_base_64`));
+            const badgeImgUpload = entryDiv.querySelector(`#badge-${badgeIndex}-image_base_64-upload`);
+            if (badgeImgUpload) badgeImgUpload.addEventListener('change', (e) => handleImageUpload(e, `badge-${badgeIndex}-image_base_64-preview`, `badge-${badgeIndex}-image_base_64`));
         }
 
         function addCustomFieldInput(targetId, prefix, key = '', value = '') {
@@ -467,8 +476,11 @@
 
         function extractDataFromForm() {
             const newConfig = { issuer: {}, badges: [] };
+            
             document.querySelectorAll('#issuer-fields .form-field').forEach(input => {
-                if(input.value) newConfig.issuer[input.id.split('-')[1]] = input.value;
+                if (input.dataset.customKey || input.dataset.customValue) return;
+                const key = input.id.split('-')[1];
+                if(input.value) newConfig.issuer[key] = input.value;
             });
             document.querySelectorAll('#issuer-custom-fields .custom-field').forEach(div => {
                 const keyInput = div.querySelector('[data-custom-key]');
@@ -481,8 +493,11 @@
             document.querySelectorAll('#badges-container .badge-entry').forEach(entry => {
                 const badge = {};
                 const index = entry.dataset.index;
-                entry.querySelectorAll('.form-field').forEach(input => {
-                    if(input.value) badge[input.id.split('-')[2]] = input.value;
+                
+                entry.querySelectorAll('.standard-fields .form-field').forEach(input => {
+                    if (input.dataset.customKey || input.dataset.customValue) return;
+                    const key = input.id.split('-')[2];
+                    if(input.value) badge[key] = input.value;
                 });
                 
                 entry.querySelectorAll(`#badge-${index}-custom-fields .custom-field`).forEach(div => {
