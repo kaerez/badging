@@ -27,81 +27,99 @@
         .error-message { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb;}
         .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin-top: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tabs { border-bottom: 2px solid #eef; margin-bottom: 20px; }
+        .tabs button { background-color: transparent; border: none; padding: 10px 15px; cursor: pointer; font-size: 18px; color: #0056b3; border-bottom: 3px solid transparent; }
+        .tabs button.active { border-bottom: 3px solid #007bff; font-weight: bold; }
     </style>
 </head>
 <body>
     <main>
-        <h1>Open Badge Baker & Verifier 🏅</h1>
+        <h1>Open Badge Tool</h1>
         
-        <section id="config-section">
-            <h2>1. Load Configuration</h2>
-            <p>Attempting to load <strong>config.yaml</strong> or <strong>config.json</strong> automatically. If neither is found, please load your config file manually.</p>
-            <input type="file" id="configFile" accept=".yaml,.yml,.json">
-            <div id="config-error" class="error-message hidden"></div>
-        </section>
+        <div class="tabs">
+            <button id="bake-tab-btn" class="active">Bake a Badge</button>
+            <button id="verify-tab-btn">Verify a Badge</button>
+        </div>
 
-        <section id="baker-section" class="hidden">
-            <h2>2. Issue a Badge</h2>
-            <form id="baker-form">
-                <div id="baker-error" class="error-message hidden"></div>
-                <label for="badge-select">Select Badge:</label>
-                <select id="badge-select" required></select>
+        <div id="baker-view">
+            <section id="config-section">
+                <h2>1. Load Configuration</h2>
+                <p>Attempting to load <strong>config.yaml</strong> or <strong>config.json</strong> automatically. If neither is found, please load your config file manually.</p>
+                <input type="file" id="configFile" accept=".yaml,.yml,.json">
+                <div id="config-error" class="error-message hidden"></div>
+            </section>
 
-                <label for="recipient-email">Recipient Email:</label>
-                <input type="email" id="recipient-email" placeholder="jane.doe@example.com" required>
+            <section id="baker-section" class="hidden">
+                <h2>2. Issue a Badge</h2>
+                <form id="baker-form">
+                    <div id="baker-error" class="error-message hidden"></div>
+                    <label for="badge-select">Select Badge:</label>
+                    <select id="badge-select" required></select>
 
-                <label for="issued-date">Issue Date:</label>
-                <input type="date" id="issued-date" required>
+                    <label for="recipient-email">Recipient Email:</label>
+                    <input type="email" id="recipient-email" placeholder="jane.doe@example.com" required>
+
+                    <label for="evidence-url">Evidence URL (Optional):</label>
+                    <input type="text" id="evidence-url" placeholder="https://github.com/janedoe/project">
+
+                    <label for="issued-date">Issue Date:</label>
+                    <input type="date" id="issued-date" required>
+                    
+                    <label>Expiration:</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="expiration" value="no" checked> No Expiration</label>
+                        <label><input type="radio" name="expiration" value="yes"> Set Date</label>
+                    </div>
+                    <input type="date" id="expires-date" class="hidden">
+
+                    <button type="submit">Bake Badge</button>
+                    <div id="bake-spinner" class="spinner hidden"></div>
+                </form>
+            </section>
+
+            <section id="result-section" class="hidden">
+                <h2>3. Download Your Baked Badge</h2>
+                <p>Your badge has been baked successfully.</p>
+                <img id="preview-img" class="preview-img" alt="Baked Badge Preview">
+                <br>
+                <a id="download-link" class="download-link" href="#" download="baked-badge.png">Download Baked Badge</a>
+                <h3>Generated Assertion JSON:</h3>
+                <pre><code id="json-output"></code></pre>
+            </section>
+        </div>
+        
+        <div id="verifier-view" class="hidden">
+            <section id="verifier-section">
+                <h2>Badge Verifier</h2>
+                <p>Upload a baked PNG badge to check its metadata.</p>
+                <input type="file" id="verifyFile" accept=".png">
+                <div id="verify-error" class="error-message hidden"></div>
                 
-                <label>Expiration:</label>
-                <div class="radio-group">
-                    <label><input type="radio" name="expiration" value="no" checked> No Expiration</label>
-                    <label><input type="radio" name="expiration" value="yes"> Set Date</label>
+                <div id="verify-summary" class="hidden">
+                    <h3>Badge Summary</h3>
+                    <div id="verify-summary-table"></div>
+                    
+                    <h3>Verify Recipient</h3>
+                    <input type="email" id="verify-email-input" placeholder="Enter recipient's email to verify identity">
+                    <button id="verify-recipient-btn">Verify Recipient</button>
+                    <div id="recipient-verification-result" class="verification-result"></div>
+                    
+                    <button id="toggle-json-btn" style="margin-top: 15px;">Show/Hide Full Assertion</button>
                 </div>
-                <input type="date" id="expires-date" class="hidden">
-
-                <button type="submit">Bake Badge</button>
-                <div id="bake-spinner" class="spinner hidden"></div>
-            </form>
-        </section>
-
-        <section id="result-section" class="hidden">
-            <h2>3. Download Your Baked Badge</h2>
-            <p>Your badge has been baked successfully.</p>
-            <img id="preview-img" class="preview-img" alt="Baked Badge Preview">
-            <br>
-            <a id="download-link" class="download-link" href="#" download="baked-badge.png">Download Baked Badge</a>
-            <h3>Generated Assertion JSON:</h3>
-            <pre><code id="json-output"></code></pre>
-        </section>
-        
-        <hr>
-
-        <section id="verifier-section">
-            <h2>Badge Verifier</h2>
-            <p>Upload a baked PNG badge to check its metadata.</p>
-            <input type="file" id="verifyFile" accept=".png">
-            <div id="verify-error" class="error-message hidden"></div>
-            
-            <div id="verify-summary" class="hidden">
-                <h3>Badge Summary</h3>
-                <div id="verify-summary-table"></div>
-                
-                <h3>Verify Recipient</h3>
-                <input type="email" id="verify-email-input" placeholder="Enter recipient's email to verify identity">
-                <button id="verify-recipient-btn">Verify Recipient</button>
-                <div id="recipient-verification-result" class="verification-result"></div>
-                
-                <button id="toggle-json-btn" style="margin-top: 15px;">Show/Hide Full Assertion</button>
-            </div>
-            <pre id="verify-output" class="hidden"></pre>
-        </section>
+                <pre id="verify-output" class="hidden"></pre>
+            </section>
+        </div>
     </main>
 
     <script>
-    // FIX: Wrap all script logic in a DOMContentLoaded listener
+    // --- Wrap all script logic in a DOMContentLoaded listener to prevent race conditions ---
     window.addEventListener('DOMContentLoaded', () => {
+        
         // --- DOM Elements ---
+        const bakeTabBtn = document.getElementById('bake-tab-btn');
+        const verifyTabBtn = document.getElementById('verify-tab-btn');
+        const bakerView = document.getElementById('baker-view');
+        const verifierView = document.getElementById('verifier-view');
         const configFile = document.getElementById('configFile');
         const configSection = document.getElementById('config-section');
         const bakerSection = document.getElementById('baker-section');
@@ -111,6 +129,7 @@
         const jsonOutput = document.getElementById('json-output');
         const previewImg = document.getElementById('preview-img');
         const downloadLink = document.getElementById('download-link');
+        const evidenceUrlInput = document.getElementById('evidence-url');
         const issuedDateInput = document.getElementById('issued-date');
         const expirationRadios = document.querySelectorAll('input[name="expiration"]');
         const expiresDateInput = document.getElementById('expires-date');
@@ -128,7 +147,7 @@
         const verifyError = document.getElementById('verify-error');
         
         let config = {};
-        let currentAssertionData = null;
+        let currentAssertionData = null; // Store data for verifier
 
         // --- Auto-load Config Logic ---
         (async () => {
@@ -153,6 +172,8 @@
         issuedDateInput.valueAsDate = new Date();
 
         // --- Event Listeners ---
+        bakeTabBtn.addEventListener('click', () => switchTab('baker'));
+        verifyTabBtn.addEventListener('click', () => switchTab('verifier'));
         configFile.addEventListener('change', handleConfigFile);
         bakerForm.addEventListener('submit', handleBake);
         verifyFile.addEventListener('change', handleVerifyFile);
@@ -166,17 +187,30 @@
             });
         });
 
-        // --- Display Error Function ---
+        // --- Core Functions ---
+
+        function switchTab(tabName) {
+            if (tabName === 'baker') {
+                bakerView.classList.remove('hidden');
+                verifierView.classList.add('hidden');
+                bakeTabBtn.classList.add('active');
+                verifyTabBtn.classList.remove('active');
+            } else {
+                bakerView.classList.add('hidden');
+                verifierView.classList.remove('hidden');
+                bakeTabBtn.classList.remove('active');
+                verifyTabBtn.classList.add('active');
+            }
+        }
+
         function displayError(element, message) {
             element.textContent = message;
             element.classList.remove('hidden');
         }
 
-        // --- Core Logic ---
         function handleConfigFile(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = function(e) {
                 const fileType = file.name.endsWith('.json') ? 'json' : 'yaml';
@@ -216,6 +250,7 @@
 
             const badgeAlias = badgeSelect.value;
             const recipientEmail = document.getElementById('recipient-email').value;
+            const evidenceUrl = evidenceUrlInput.value;
             const issuedDate = issuedDateInput.value;
             const expiresOption = document.querySelector('input[name="expiration"]:checked').value;
             const expiresDate = expiresOption === 'yes' ? expiresDateInput.value : null;
@@ -228,7 +263,7 @@
 
             try {
                 const badgeData = config.badges.find(b => b.alias === badgeAlias);
-                const assertion = await buildAssertion(badgeData, recipientEmail, issuedDate, expiresDate);
+                const assertion = await buildAssertion(badgeData, recipientEmail, issuedDate, expiresDate, evidenceUrl);
                 const bakedPngDataUri = await bakePng(badgeData.image_base_64, assertion);
                 
                 jsonOutput.textContent = JSON.stringify(assertion, null, 2);
@@ -322,7 +357,7 @@
             }
         }
         
-        async function buildAssertion(badge, email, issuedOn, expires) {
+        async function buildAssertion(badge, email, issuedOn, expires, evidence) {
             const recipientIdentity = await hashRecipient(email);
             const assertion = {
                 "@context": "https://w3id.org/openbadges/v2",
@@ -336,18 +371,20 @@
                     "description": badge.description, 
                     "image": badge.image_base_64,
                     "criteria": { "narrative": badge.criteria }, 
-                    "issuer": config.issuer // Use the full issuer object for baked assertions
+                    "issuer": config.issuer
                 },
                 "issuedOn": new Date(`${issuedOn}T00:00:00Z`).toISOString(),
                 "verification": { "type": "hosted" }
             };
-            if (expires) {
-                assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
-            }
+
+            if (expires) assertion.expires = new Date(`${expires}T00:00:00Z`).toISOString();
+            if (evidence) assertion.evidence = evidence;
+
             return assertion;
         }
         
         // --- Helper and Utility Functions ---
+        
         function escapeHtml(text) {
             if (typeof text !== 'string') return '';
             const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
@@ -370,6 +407,11 @@
             });
         }
         
+        /**
+         * PNG Verifier Logic
+         * Iterates through PNG chunks to find and extract the openbadges assertion.
+         * Handles both tEXt and iTXt chunks.
+         */
         function extractBadgeData(pngBytes) {
             const decoder = new TextDecoder(); let offset = 8;
             while (offset < pngBytes.length) {
@@ -384,9 +426,9 @@
                         if (keyword === 'openbadges') {
                             let dataOffset = nullIndex + 1;
                             if (type === 'iTXt') {
-                                dataOffset += 2; 
-                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++; dataOffset++;
-                                while (pngBytes[offset + 8 + dataOffset] !== 0) dataOffset++; dataOffset++;
+                                dataOffset += 2; // Skip compression flag & method
+                                while (chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; // Skip language tag
+                                while (chunkData[dataOffset] !== 0) dataOffset++; dataOffset++; // Skip translated keyword
                             }
                             const assertionText = decoder.decode(chunkData.slice(dataOffset));
                             return JSON.parse(assertionText);
@@ -399,6 +441,10 @@
             return null;
         }
 
+        /**
+         * PNG Baker Logic
+         * Inserts a tEXt chunk with the assertion data before the IEND chunk.
+         */
         async function bakePng(base64Png, assertionJson) {
             const pngHeader = "data:image/png;base64,";
             const pngData = atob(base64Png.substring(pngHeader.length));
@@ -440,6 +486,7 @@
             return pngHeader + btoa(newPngData);
         }
 
+        // Standard CRC32 implementation for PNG chunks
         const crcTable = (() => {
             const table = new Int32Array(256);
             for(let n = 0; n < 256; n++) {
@@ -455,7 +502,7 @@
             for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
             return (crc ^ -1) >>> 0;
         }
-    }); // End DOMContentLoaded
+    });
     </script>
 </body>
 </html>
