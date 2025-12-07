@@ -3,5 +3,5 @@
   "type": "CryptographicKey",
   "id": "https://kaerez.github.io/badging/sfdc/public-key.json",
   "owner": "https://kaerez.github.io/badging/sfdc/issuer.json",
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBM8WzQLgnGpE6470v/uMH6ToG5oR\nYH8idiubna087YvWFJOYo9qHGCOsY4IvZRmJSDSjjkL2Lq6AvbMDi4opaX4=\n-----END PUBLIC KEY-----"
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBINYg6RF0fgpdjSsHIm6WMjJNmKN\n0hNuwu4u9L/nb3FnxGuitenQT4HnO9Lytt6N1gD2mjTR6LgfoXIaFHOJ6Tc=\n-----END PUBLIC KEY-----"
 }
