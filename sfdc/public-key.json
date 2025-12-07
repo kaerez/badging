@@ -1,7 +1,7 @@
 {
   "@context": "https://w3id.org/openbadges/v2",
   "type": "CryptographicKey",
-  "id": "https://sfdc.co/url/certpub",
-  "owner": "https://sfdc.co/url/certiss",
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBCQZjapRxbf637KSKl9M15malliG\nqM506MHbX8p0aivniFhFDs0F/fKJu3vcf2vQSLQjMNHWEFbyTNQcN4rB+2M=\n-----END PUBLIC KEY-----"
+  "id": "https://kaerez.github.io/badging/sfdc/public-key.json",
+  "owner": "https://kaerez.github.io/badging/sfdc/issuer.json",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBM8WzQLgnGpE6470v/uMH6ToG5oR\nYH8idiubna087YvWFJOYo9qHGCOsY4IvZRmJSDSjjkL2Lq6AvbMDi4opaX4=\n-----END PUBLIC KEY-----"
 }
